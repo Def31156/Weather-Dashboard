@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>District Weather Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f4; color: #1c1c1a; min-height: 100vh; }
+  .page { max-width: 1400px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+
+  .cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+  .card { background: #fff; border-radius: 10px; border: 0.5px solid #e5e5e3; padding: 12px 14px; }
+  .card-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .card-value { font-size: 19px; font-weight: 500; }
+  .card-sub   { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .toolbar label { font-size: 13px; color: #666; }
+  select { font-size: 13px; padding: 6px 10px; border-radius: 7px; border: 0.5px solid #ccc; background: #fff; color: #1c1c1a; }
+  .btn { font-size: 13px; padding: 7px 14px; border-radius: 7px; border: 0.5px solid #ccc; background: #fff; cursor: pointer; transition: background 0.15s; }
+  .btn:hover { background: #f0f0ef; }
+  .btn-primary { background: #1c1c1a; color: #fff; border-color: #1c1c1a; }
+  .btn-primary:hover { background: #333; }
+  .btn-primary:disabled { background: #999; border-color: #999; cursor: not-allowed; }
+  .btn-export { margin-left: auto; }
+
+  .progress-wrap { margin-bottom: 0.75rem; display: none; }
+  .progress-bar-bg { background: #e5e5e3; border-radius: 4px; height: 6px; overflow: hidden; }
+  .progress-bar-fill { background: #1c1c1a; height: 6px; border-radius: 4px; transition: width 0.2s; width: 0%; }
+  .progress-label { font-size: 11px; color: #888; margin-top: 4px; }
+
+  .error-box { background: #fff5f5; border: 1px solid #fcc; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; font-size: 12px; color: #c0392b; display: none; }
+
+  .table-wrap { background: #fff; border-radius: 10px; border: 0.5px solid #e5e5e3; overflow: hidden; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1300px; }
+  th { font-size: 10.5px; font-weight: 500; color: #888; text-align: left; padding: 8px 10px; border-bottom: 0.5px solid #e5e5e3; background: #fafafa; white-space: nowrap; }
+  th.g-now  { background: #f0f7ff; color: #185fa5; }
+  th.g-hist { background: #f5f0fa; color: #6b3faa; }
+  th.g-diff { background: #f0faf5; color: #1a7a4a; }
+
+  tr.summary-row { cursor: pointer; }
+  tr.summary-row td { padding: 9px 10px; border-bottom: 0.5px solid #f0f0ef; vertical-align: middle; transition: background 0.1s; }
+  tr.summary-row:hover td { background: #f5f9ff; }
+  tr.summary-row.expanded td { background: #f0f7ff; border-bottom: none; }
+  tr.summary-row.d38-row td { border-left: 3px solid #f5c518; }
+  tr.summary-row.d38-row.expanded td { border-left: 3px solid #e0a800; background: #fffdf0; }
+  tr.summary-row.d38-row:hover td { background: #fefae8; }
+
+  .toggle-arrow { display: inline-block; font-size: 10px; color: #aaa; margin-right: 5px; transition: transform 0.2s; user-select: none; }
+  .expanded .toggle-arrow { transform: rotate(90deg); }
+
+  tr.expand-group { display: none; }
+  tr.expand-group.visible { display: table-row; }
+  tr.expand-group td { padding: 0; border-bottom: none; }
+
+  /* Daily table */
+  .daily-wrap { background: #f7fbff; border-bottom: 2px solid #c8dff8; }
+  table.daily-tbl { min-width: 1300px; }
+  table.daily-tbl th { font-size: 10px; padding: 6px 10px; background: #e8f2fe; color: #185fa5; border-bottom: 0.5px solid #c8dff8; }
+  table.daily-tbl th.dg-hist { background: #f0eafa; color: #6b3faa; }
+  table.daily-tbl th.dg-diff { background: #e8f7ef; color: #1a7a4a; }
+  table.daily-tbl td { padding: 6px 10px; border-bottom: 0.5px solid #e8f2fe; font-size: 11.5px; }
+  table.daily-tbl tr:last-child td { border-bottom: none; }
+  table.daily-tbl tr:hover td { background: #edf4ff; }
+
+  /* Store panel */
+  .store-wrap { background: #fffdf0; border-bottom: 3px solid #e0a800; }
+  .store-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px 6px; border-bottom: 0.5px solid #f5e8a0; flex-wrap: wrap; }
+  .store-header span { font-size: 12px; font-weight: 500; color: #854F0B; }
+  .store-header small { font-size: 11px; color: #aaa; }
+  table.store-tbl { min-width: 1300px; }
+  table.store-tbl th { font-size: 10px; padding: 6px 10px; background: #fef9e0; color: #854F0B; border-bottom: 0.5px solid #f5e8a0; }
+  table.store-tbl th.sg-hist { background: #f5f0fa; color: #6b3faa; }
+  table.store-tbl th.sg-diff { background: #e8f7ef; color: #1a7a4a; }
+  table.store-tbl td { padding: 7px 10px; border-bottom: 0.5px solid #fef3c0; font-size: 11.5px; }
+  table.store-tbl tr:last-child td { border-bottom: none; }
+  table.store-tbl tr.summary-row:hover td { background: #fefae8; }
+  table.store-tbl tr.summary-row.expanded td { background: #fef3c0; border-bottom: none; }
+
+  tr.store-daily-group { display: none; }
+  tr.store-daily-group.visible { display: table-row; }
+  tr.store-daily-group td { padding: 0; }
+  .store-daily-inner table { min-width: 1300px; }
+  .store-daily-inner th { font-size: 10px; padding: 5px 10px; background: #fef3c0; color: #854F0B; border-bottom: 0.5px solid #f5e8a0; }
+  .store-daily-inner th.sdg-hist { background: #f0eafa; color: #6b3faa; }
+  .store-daily-inner th.sdg-diff { background: #e8f7ef; color: #1a7a4a; }
+  .store-daily-inner td { padding: 6px 10px; border-bottom: 0.5px solid #fef3c0; font-size: 11px; background: #fffbea; }
+  .store-daily-inner tr:last-child td { border-bottom: none; }
+  .store-daily-inner tr:hover td { background: #fef9e0; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11.5px; font-weight: 500; }
+  .hot  { background: #FAECE7; color: #993C1D; }
+  .warm { background: #FAEEDA; color: #854F0B; }
+  .cool { background: #E6F1FB; color: #185FA5; }
+  .cold { background: #EAF3DE; color: #3B6D11; }
+
+  /* Cloud badge */
+  .cloud-badge { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11.5px; font-weight: 500; }
+  .cloud-heavy  { background: #e8e8e8; color: #444; }
+  .cloud-partly { background: #f0f0f0; color: #666; }
+  .cloud-light  { background: #f8f8f8; color: #888; border: 0.5px solid #e0e0e0; }
+
+  /* Sun bar */
+  .sun-wrap { display: flex; align-items: center; gap: 5px; }
+  .sun-bar  { height: 5px; border-radius: 3px; background: #f5c518; min-width: 2px; flex-shrink: 0; }
+
+  /* Cloud bar */
+  .cloud-wrap { display: flex; align-items: center; gap: 5px; }
+  .cloud-bar-bg { width: 44px; height: 5px; border-radius: 3px; background: #e8e8e8; flex-shrink: 0; overflow: hidden; }
+  .cloud-bar-fill { height: 5px; border-radius: 3px; background: #94a3b8; }
+
+  .delta-pos { color: #c0392b; font-weight: 500; font-size: 11.5px; }
+  .delta-neg { color: #185fa5; font-weight: 500; font-size: 11.5px; }
+  .delta-neu { color: #888; font-size: 11.5px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #ddd; border-top-color: #888; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .err-cell { color: #c0392b; font-size: 11px; }
+
+  .status { font-size: 12px; color: #888; padding: 0 0 0.5rem; min-height: 18px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 11px; color: #888; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+  .hint { font-size: 11px; color: #aaa; margin-bottom: 0.75rem; }
+  .footer { margin-top: 1.25rem; font-size: 11px; color: #aaa; line-height: 1.8; }
+  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>District Weather Dashboard</h1>
+  <p class="subtitle" id="date-range">Loading weather data…</p>
+
+  <div class="cards">
+    <div class="card"><div class="card-label">Overall avg temp (2026)</div><div class="card-value" id="s-temp-now">—</div><div class="card-sub" id="s-temp-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Avg daily sunlight (2026)</div><div class="card-value" id="s-sun-now">—</div><div class="card-sub" id="s-sun-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Avg cloud cover (2026)</div><div class="card-value" id="s-cloud-now">—</div><div class="card-sub" id="s-cloud-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Warmest district</div><div class="card-value" id="s-hot">—</div><div class="card-sub" id="s-hot-sub">&nbsp;</div></div>
+    <div class="card"><div class="card-label">Most rainfall</div><div class="card-value" id="s-rain">—</div><div class="card-sub" id="s-rain-sub">&nbsp;</div></div>
+    <div class="card"><div class="card-label">Avg temp Δ vs 2025</div><div class="card-value" id="s-delta">—</div><div class="card-sub" id="s-delta-sub">&nbsp;</div></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-primary" id="run-btn" onclick="fetchAll()">Refresh data</button>
+    <label>Sort by</label>
+    <select id="sort-sel" onchange="renderTable()">
+      <option value="district">District #</option>
+      <option value="location">Location</option>
+      <option value="temp">Avg temp ↓</option>
+      <option value="rain">Rainfall ↓</option>
+      <option value="sun">Sunlight ↓</option>
+      <option value="cloud">Cloud cover ↓</option>
+      <option value="delta">Temp Δ vs 2025 ↓</option>
+    </select>
+    <button class="btn" onclick="expandAll()">Expand all</button>
+    <button class="btn" onclick="collapseAll()">Collapse all</button>
+    <button class="btn btn-export" id="export-btn" onclick="exportXLSX()" disabled>Export .xlsx</button>
+  </div>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+    <div class="progress-label" id="progress-label">Starting…</div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#E6F1FB"></span>This year (2026)</span>
+    <span><span class="dot" style="background:#f5f0fa"></span>Same week 2025</span>
+    <span><span class="dot" style="background:#f0faf5"></span>Year-over-year Δ</span>
+    <span style="color:#c0392b;font-weight:500">▲ Higher than 2025</span>
+    <span style="color:#185fa5;font-weight:500">▼ Lower than 2025</span>
+    <span><span style="display:inline-block;width:16px;height:5px;background:#f5c518;border-radius:3px;margin-right:4px;vertical-align:middle"></span>Sunlight</span>
+    <span><span style="display:inline-block;width:16px;height:5px;background:#94a3b8;border-radius:3px;margin-right:4px;vertical-align:middle"></span>Cloud cover %</span>
+    <span><span style="display:inline-block;width:14px;height:10px;background:#fef9e0;border:1px solid #f5c518;border-radius:2px;margin-right:4px;vertical-align:middle"></span>D38 store view</span>
+  </div>
+  <div class="hint">▶ Click any district row to expand. District 38 shows individual store weather.</div>
+
+  <div class="status" id="status">Click "Run forecast pull" to load live data.</div>
+  <div class="error-box" id="error-box"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="width:22px"></th>
+          <th rowspan="2">Location</th>
+          <th rowspan="2" style="width:44px">Dist.</th>
+          <th class="g-now" colspan="4">This week (2026)</th>
+          <th class="g-hist" colspan="4">Same week 2025</th>
+          <th class="g-diff" colspan="4">Year-over-year Δ</th>
+        </tr>
+        <tr>
+          <th class="g-now">Avg Temp</th>
+          <th class="g-now">Rainfall</th>
+          <th class="g-now">Avg Sunlight</th>
+          <th class="g-now">Avg Cloud Cover</th>
+          <th class="g-hist">Avg Temp</th>
+          <th class="g-hist">Rainfall</th>
+          <th class="g-hist">Avg Sunlight</th>
+          <th class="g-hist">Avg Cloud Cover</th>
+          <th class="g-diff">Temp Δ</th>
+          <th class="g-diff">Rain Δ</th>
+          <th class="g-diff">Sun Δ</th>
+          <th class="g-diff">Cloud Δ</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <strong>Data sources</strong><br>
+    • Current forecast &amp; 2025 historical: <a href="https://open-meteo.com" target="_blank" style="color:#185fa5">Open-Meteo</a> (commercial plan)<br>
+    • Cloud cover = average daily cloud cover % (0% = clear sky, 100% = fully overcast)<br>
+    • All districts with store lists expand to show individual store weather + daily breakdowns<br>
+    • Dates auto-adjust each run: always compares the current 7-day window to the same 7 days in 2025
+  </div>
+</div>
+
+<script>
+const API_KEY = 'VzzMRqauyjq0RBu0';
+
+const D28_STORES = [
+  { store:'Store 58', address:'1168 W 103rd St., KC, MO 64114', lat:39.0231, lon:-94.5786 },
+  { store:'Store 61', address:'4725 E Central Ave, Wichita, KS 67208', lat:37.6872, lon:-97.3035 },
+  { store:'Store 363', address:'4201 S Noland Rd., Independence, MO 64055', lat:39.0917, lon:-94.4152 },
+  { store:'Store 447', address:'2721 Oak View Dr, Omaha, NE 68144', lat:41.2348, lon:-96.0673 },
+  { store:'Store 467', address:'4100 University Ave, West Des Moines 50266', lat:41.5772, lon:-93.7114 },
+  { store:'Store 613', address:'14970 W 119th St., Olathe, KS 66062', lat:38.8814, lon:-94.8191 },
+  { store:'Store 637', address:'12111 W Maple St, Wichita, KS 67235', lat:37.7044, lon:-97.4369 },
+  { store:'Store 846', address:'8936 N Skyview Ave, KC, MO 64154', lat:39.2198, lon:-94.5786 },
+  { store:'Store 859', address:'607 US-40, Blue Springs, MO 64014', lat:39.017, lon:-94.2746 },
+  { store:'Store 899', address:'615 N Belt Hwy, St. Joseph, MO 64506', lat:39.7675, lon:-94.8467 },
+  { store:'Store 989', address:'1570 SW Wanamaker Rd., Topeka, KS 66604', lat:39.0473, lon:-95.6752 },
+  { store:'Store 1051', address:'8668 NE Flintlock Rd., KC, MO 64157', lat:39.2501, lon:-94.4951 },
+  { store:'Store 1068', address:'2307 N Rock Rd., Derby, KS 67037', lat:37.5534, lon:-97.2689 },
+];
+
+const D33_STORES = [
+  { store:'Store 1052', address:'1207 WATER TOWER PL STE 15, MO 63010-2142', lat:38.4334, lon:-90.3651 },
+  { store:'Store 1076', address:'301 WINDING WOODS CTR STE 301, MO 63366-4170', lat:38.8114, lon:-90.8529 },
+  { store:'Store 187', address:'3829 LEMAY FERRY RD, MO 63125-4535', lat:38.5201, lon:-90.3498 },
+  { store:'Store 204', address:'6216 STAGE RD, TN 38134-3726', lat:35.1987, lon:-89.9143 },
+  { store:'Store 342', address:'4111 N CLOVERLEAF DR, MO 63376-6443', lat:38.8114, lon:-90.8529 },
+  { store:'Store 347', address:'15545 MANCHESTER RD, MO 63011-3001', lat:38.5948, lon:-90.5463 },
+  { store:'Store 38', address:'12310 MANCHESTER RD, MO 63131-4315', lat:38.5887, lon:-90.5143 },
+  { store:'Store 441', address:'1941 E INDEPENDENCE ST, MO 65804-3751', lat:37.1956, lon:-93.2679 },
+  { store:'Store 453', address:'4227 E MCCAIN BLVD, AR 72117-2516', lat:34.7831, lon:-92.2071 },
+  { store:'Store 478', address:'875 W POPLAR AVE STE 11, TN 38017-2568', lat:35.0484, lon:-89.7298 },
+  { store:'Store 50', address:'7850 POPLAR AVE STE 16, TN 38138-5000', lat:35.0748, lon:-89.9143 },
+  { store:'Store 636', address:'801 S BOWMAN RD STE 1, AR 72211-3427', lat:34.7465, lon:-92.3854 },
+  { store:'Store 725', address:'8500 PHOENIX AVE, AR 72903-6135', lat:35.3495, lon:-94.3285 },
+  { store:'Store 852', address:'5218 GOODMAN RD STE 107, MS 38654-7985', lat:34.9543, lon:-89.9932 },
+  { store:'Store 876', address:'8 STONEBRIDGE BLVD STE J, TN 38305-2178', lat:35.6148, lon:-88.7784 },
+  { store:'Store 900', address:'3952 N GLOSTER ST STE D E, MS 38804-0913', lat:34.2693, lon:-88.6923 },
+  { store:'Store 903', address:'863 MOUNT MORIAH RD, TN 38117-5704', lat:35.1201, lon:-90.0143 },
+  { store:'Store 960', address:'9020 US HIGHWAY 64 STE 107, TN 38002-9771', lat:35.2459, lon:-89.8254 },
+];
+
+const D34_STORES = [
+  { store:'Store 1072', address:'137 N Mustang Rd Mustang , OK 73064', lat:35.3845, lon:-97.7245 },
+  { store:'Store 1502', address:'2500 S I-35 Service Rd , Moore , Ok 73160', lat:35.3395, lon:-97.4867 },
+  { store:'Store 225', address:'7175 S Mingo Rd , Tulsa ,Ok  74133', lat:36.0401, lon:-95.8476 },
+  { store:'Store 269', address:'216 S Bryant Ave , Edmond, OK 73034', lat:35.6528, lon:-97.4781 },
+  { store:'Store 311', address:'676Ed Noble Pkwy , Norman , OK 73072', lat:35.2226, lon:-97.4395 },
+  { store:'Store 32', address:'4516 nw 63rd st ,oklahoma city , ok 73132', lat:35.5312, lon:-97.6121 },
+  { store:'Store 422', address:'4011 NW Cache Rd , Lawton , Ok 73505', lat:34.6036, lon:-98.3959 },
+  { store:'Store 432', address:'800 SW 89th St, Oklahoma City , Ok 73139', lat:35.4132, lon:-97.5143 },
+  { store:'Store 54', address:'3233 S Harvard Ave , Tulsa , OK 74135', lat:36.0876, lon:-95.9143 },
+  { store:'Store 670', address:'2520 W Memorial Rd , Oklahoma City , OK 73134', lat:35.5901, lon:-97.5143 },
+  { store:'Store 671', address:'9021 N 121st E Ave #500 , Owasso , OK 74055', lat:36.2695, lon:-95.8547 },
+  { store:'Store 694', address:'1600 GARTH BROOKS BLVD STE 115 Yukon, OK 73099', lat:35.5067, lon:-97.7617 },
+  { store:'Store 727', address:'6309 S. Elm Pl , Broken Arrow , Ok 74011', lat:36.0526, lon:-95.7975 },
+  { store:'Store 760', address:'7014 se 15th st , Oklahoma City , Ok 73110', lat:35.4451, lon:-97.4143 },
+  { store:'Store 766', address:'3985 Ok-97 , Sand Springs , Ok , 74063', lat:36.1395, lon:-96.1078 },
+  { store:'Store 817', address:'2401 12th Ave NW Ste 19 ,Ardmore ,OK 73401', lat:34.1743, lon:-97.1436 },
+  { store:'Store 825', address:'251 E Waterloo rd Ste 2 , Edmond , OK 73034', lat:35.6528, lon:-97.4781 },
+  { store:'Store 826', address:'12307 N Rockwell Ave , Okalhoma City , OK 73142', lat:35.5901, lon:-97.6121 },
+  { store:'Store 834', address:'12150 Vancouver Ave Ste A , Glenpool , Ok 74033', lat:35.9473, lon:-96.0039 },
+  { store:'Store 878', address:'611 NW 32nd St, Newcastle , OK 73065', lat:35.2423, lon:-97.5992 },
+  { store:'Store 882', address:'3805 Washington Pl Suite C , Bartlesville , Ok 74006', lat:36.7473, lon:-95.9808 },
+  { store:'Store 909', address:'5503 W Owen K Garriot Rd , Enid , Ok 73703', lat:36.3956, lon:-97.8784 },
+];
+
+const D36_STORES = [
+  { store:'Store 43', address:'263 Hilderbrand., Atlanta, GA 30329', lat:33.8101, lon:-84.3276 },
+  { store:'Store 53', address:'7626 Memorial PKWY SW., Huntsville, GA 35802', lat:34.6626, lon:-86.5294 },
+  { store:'Store 329', address:'1355 East-West Connector., Austell, GA 30106', lat:33.8123, lon:-84.6377 },
+  { store:'Store 345', address:'2404 Virginia Beach BLVD., Virginia Beach, VA 23454', lat:36.8201, lon:-76.0498 },
+  { store:'Store 376', address:'10502 Alpharetta HWY., Roswell, GA 30076', lat:34.0232, lon:-84.3616 },
+  { store:'Store 400', address:'1401 Johnson Ferry Rd., Marietta GA 30062', lat:33.9376, lon:-84.5654 },
+  { store:'Store 504', address:'9745 Highway 92., Woodstock, GA 30188', lat:34.1015, lon:-84.5194 },
+  { store:'Store 583', address:'3405 Dallas HWY., Marietta, GA 30064', lat:33.9376, lon:-84.5654 },
+  { store:'Store 587', address:'5805 State Bridge Rd,. Duluth, GA 30097', lat:33.9793, lon:-84.1449 },
+  { store:'Store 639', address:'12850 Highway 9 N., Alpharetta, GA 30004', lat:34.0754, lon:-84.2941 },
+  { store:'Store 642', address:'3335 Cobb PKWY NW., Actworth, GA 30101', lat:34.0662, lon:-84.6763 },
+  { store:'Store 672', address:'1680 Mall of Georgia BLVD., Buford, GA 30519', lat:34.1193, lon:-83.991 },
+  { store:'Store 673', address:'1975 Dawsonville HWY, Gainesville, GA 30501', lat:34.2979, lon:-83.8241 },
+  { store:'Store 771', address:'425 Peachtree PKWY., Cumming, GA 30041', lat:34.2073, lon:-84.1402 },
+  { store:'Store 772', address:'7754 Spalding DR,. Peachtree Corners, GA 30092', lat:33.9698, lon:-84.2216 },
+  { store:'Store 851', address:'7830 Highway 72 W., Madison, AL 35758', lat:34.6993, lon:-86.7483 },
+  { store:'Store 879', address:'2900 Delk Rd., Marietta, GA 30067', lat:33.9376, lon:-84.5654 },
+  { store:'Store 1085', address:'3455 Peachtree PKWY., Swanee, GA 30024', lat:34.049, lon:-84.0716 },
+  { store:'Store 3007', address:'2924B Amwilder RD., Atlanta, GA30360', lat:33.8901, lon:-84.3101 },
+];
+
+const D37_STORES = [
+  { store:'Store 102', address:'1588 MONTGOMERY HWY. Hoover AL', lat:33.4052, lon:-86.8114 },
+  { store:'Store 212', address:'2725 EASTERN BLVD. Montgomery AL', lat:32.3668, lon:-86.2999 },
+  { store:'Store 316', address:'191 JONESBORO RD. McDonough GA', lat:33.4473, lon:-84.1468 },
+  { store:'Store 317', address:'5222 NORTH HENRY BLVD. Stockbridge GA', lat:33.5396, lon:-84.2313 },
+  { store:'Store 320', address:'400 Stonewall Ave West Fayetteville GA', lat:33.449, lon:-84.4549 },
+  { store:'Store 365', address:'1708 Scenic HWY N. Snellville GA', lat:33.8573, lon:-84.0194 },
+  { store:'Store 418', address:'2522 Dawson RD. Albany GA', lat:31.5785, lon:-84.1557 },
+  { store:'Store 428', address:'5370 Stone Mountain HWY. Stone Mountain GA', lat:33.8082, lon:-84.1702 },
+  { store:'Store 431', address:'6440 W Hamilton Park Dr. Columbus GA', lat:32.461, lon:-84.9877 },
+  { store:'Store 620', address:'428 Crosstown Dr. Peachtree City GA', lat:33.3965, lon:-84.5949 },
+  { store:'Store 651', address:'5880 Trussville Crossing Blvd. Birmingham AL', lat:33.5186, lon:-86.8104 },
+  { store:'Store 697', address:'2975 N Druid Hills RD. Atlanta GA', lat:33.7762, lon:-84.3271 },
+  { store:'Store 723', address:'1111 Bullsboror DR, Newnan GA', lat:33.3807, lon:-84.7997 },
+  { store:'Store 762', address:'2270 Salem RD SE. Conyers GA', lat:33.6673, lon:-84.0177 },
+  { store:'Store 808', address:'2985 Chapel Hill RD. Douglasville GA', lat:33.7515, lon:-84.7477 },
+  { store:'Store 892', address:'4375 Forsyth RD. Macon GA', lat:32.8407, lon:-83.6324 },
+];
+
+const D38_STORES = [
+  { store:'Store 56', address:'7211 N. Keystone Ave., Indianapolis, IN 46240', lat:39.87, lon:-86.1381 },
+  { store:'Store 165', address:'257 E. Coliseum Blvd., Fort Wayne, IN 46909', lat:41.0793, lon:-85.1394 },
+  { store:'Store 171', address:'7565 US 31 S., Indianapolis, IN 46227', lat:39.6534, lon:-86.142 },
+  { store:'Store 385', address:'9521 S. Cicero Ave., Oak Lawn, IL 60453', lat:41.7197, lon:-87.7478 },
+  { store:'Store 389', address:'324 W. Roosevelt Rd., Lombard, IL 60148', lat:41.88, lon:-88.0076 },
+  { store:'Store 410', address:'771 E. Dundee Rd., Palatine, IL 60074', lat:42.1103, lon:-88.0342 },
+  { store:'Store 411', address:'15923 Harlem Ave., Tinley Park, IL 60477', lat:41.5731, lon:-87.7931 },
+  { store:'Store 415', address:'1215 US Hwy 41, Schererville, IN 46375', lat:41.4789, lon:-87.4267 },
+  { store:'Store 484', address:'5666 Grape Rd., Mishawaka, IN 46545', lat:41.662, lon:-86.1581 },
+  { store:'Store 612', address:'485 S. Route 59, Aurora, IL 60504', lat:41.7606, lon:-88.3201 },
+  { store:'Store 619', address:'14641 US 31 N., Carmel, IN 46032', lat:39.9784, lon:-86.118 },
+  { store:'Store 640', address:'369 W. Army Trail Rd., Bloomingdale, IL 60108', lat:41.95, lon:-88.0798 },
+  { store:'Store 669', address:'8600 E. 96th St., Fishers, IN 46032', lat:39.9784, lon:-86.118 },
+  { store:'Store 730', address:'835 Beachway Dr., Indianapolis, IN 46224', lat:39.792, lon:-86.231 },
+  { store:'Store 803', address:'502 Randall Rd., South Elgin, IL 60177', lat:42.0281, lon:-88.312 },
+  { store:'Store 853', address:'6030 Central Ave., Portage, IN 46368', lat:41.5817, lon:-87.1765 },
+  { store:'Store 962', address:'117 S. Randall Rd., Algonquin, IL 60102', lat:42.1639, lon:-88.2923 },
+  { store:'Store 2107', address:'320 Industrial Dr., West Chicago, IL 60185', lat:41.8853, lon:-88.207 },
+];
+
+const D39_STORES = [
+  { store:'Store 45', address:'3185 Sheridan Dr., Amherst, NY, 14226', lat:42.9784, lon:-78.7984 },
+  { store:'Store 65', address:'1340 W Ridge Rd., Greece, NY, 14615', lat:43.2012, lon:-77.6966 },
+  { store:'Store 92', address:'29945 Orchard Lake Rd., Farmington Hills, MI, 48334', lat:42.4989, lon:-83.3677 },
+  { store:'Store 99', address:'3662 Rochester Rd., Troy, MI, 48083', lat:42.6064, lon:-83.1498 },
+  { store:'Store 134', address:'6875 Ridge Rd., Parma, OH, 44129', lat:41.3845, lon:-81.7229 },
+  { store:'Store 158', address:'749 Panorama Trl S., NY, 14625', lat:43.1248, lon:-77.5098 },
+  { store:'Store 159', address:'2700 28th St., Grand Rapids, MI, 49512', lat:42.8901, lon:-85.6187 },
+  { store:'Store 248', address:'14568 Pearl Rd., Strongsville, OH, 44136', lat:41.3145, lon:-81.8357 },
+  { store:'Store 274', address:'2525 South Reynolds Rd., Toledo, OH, 43614', lat:41.6201, lon:-83.5876 },
+  { store:'Store 287', address:'25128 Lorain Rd., North Olmsted, OH, 44070', lat:41.4151, lon:-81.9235 },
+  { store:'Store 307', address:'4962 Monroe St., Toledo, OH, 43623', lat:41.6901, lon:-83.6101 },
+  { store:'Store 324', address:'5095 Transit Rd., Buffalo, NY, 14221', lat:42.8864, lon:-78.8784 },
+  { store:'Store 333', address:'34658 Warren Rd., Westland, MI, 48185', lat:42.3242, lon:-83.4002 },
+  { store:'Store 384', address:'3125 28th St. SW., Grandville, MI, 49418', lat:42.9081, lon:-85.7605 },
+  { store:'Store 641', address:'1101 Bethel Rd., Columbus, OH, 43220', lat:40.0351, lon:-83.0498 },
+  { store:'Store 654', address:'84 Boardman Poland Rd., Youngstown, OH, 44512', lat:41.0998, lon:-80.6495 },
+  { store:'Store 660', address:'9211 Mentor Ave., Mentor, OH, 44060', lat:41.6662, lon:-81.3398 },
+  { store:'Store 858', address:'5069 North Hamilton Rd., Columbus, OH, 43230', lat:40.0698, lon:-82.8543 },
+];
+
+const D40_STORES = [
+  { store:'Store 91', address:'2825 Washington Rd. Ste K, Augusta, GA 30909', lat:33.4735, lon:-82.0105 },
+  { store:'Store 94', address:'4402 E. Independence Blvd, Charlotte, NC 28505', lat:35.2123, lon:-80.7987 },
+  { store:'Store 350', address:'6185 Rivers Ave, Charleston, SC 29406', lat:32.9176, lon:-80.0831 },
+  { store:'Store 366', address:'7370 Two Notch Rd. Unit A,B, Columbia SC. 29223', lat:34.0676, lon:-80.9076 },
+  { store:'Store 381', address:'8500 Pineville-Matthews Rd, Ste H, Charlotte, NC 28226', lat:35.0876, lon:-80.8543 },
+  { store:'Store 420', address:'523 Hayward Rd, Greenville, SC 29607', lat:34.8376, lon:-82.3654 },
+  { store:'Store 867', address:'601 River Hwy, Mooresville, NC 28117', lat:35.5846, lon:-80.8101 },
+  { store:'Store 634', address:'260 Harbison Blvd, Ste A, Columbia, SC 29212', lat:34.0676, lon:-81.1698 },
+  { store:'Store 635', address:'4010 Smith Corners Blvd Ste D, Charlotte, NC 28269', lat:35.3512, lon:-80.8101 },
+  { store:'Store 659', address:'1925 Savannah Hwy, Charleston, SC 29407', lat:32.7765, lon:-79.9311 },
+  { store:'Store 681', address:'9721 E. Independence Blvd. Ste B, Matthews, NC 28105', lat:35.1268, lon:-80.7134 },
+  { store:'Store 709', address:'1211 N. Main St. Ste. C Summerville SC. 29483', lat:33.0185, lon:-80.1756 },
+  { store:'Store 735', address:'339B Harrison Bridge Rd, Simpsonville, SC 29680', lat:34.7376, lon:-82.254 },
+  { store:'Store 786', address:'1125 Johnnie Dodds Blvd. Mount Pleasant, SC 29464', lat:32.8323, lon:-79.8284 },
+  { store:'Store 835', address:'7750 Warren H Abernathy Hwy Ste A, Spartanburg, SC,29301', lat:34.9496, lon:-81.9321 },
+  { store:'Store 847', address:'4324 Washington Rd. Ste. 101, Evans, GA 30809', lat:33.5371, lon:-82.1321 },
+  { store:'Store 920', address:'8027 Kingston Pike Ste 3, Knoxville, TN 37919', lat:35.9606, lon:-83.9207 },
+  { store:'Store 921', address:'741 Louisville Rd, Alcoa, TN 37701', lat:35.7895, lon:-84.0016 },
+  { store:'Store 841', address:'3090 East Franklin Blvd, Gastonia, NC 28056', lat:35.2621, lon:-81.1873 },
+];
+
+const D41_STORES = [
+  { store:'Store 051', address:'6414 E VIRGINIA BEACH BLVD., Norfolk, VA 23502', lat:36.8508, lon:-76.2859 },
+  { store:'Store 344', address:'836 EDEN WAY N., Chesapeake, VA 23320', lat:36.7682, lon:-76.2875 },
+  { store:'Store445', address:'1037 HANES MALL BLVD., Winston-Salem, NC 27103', lat:36.0987, lon:-80.3154 },
+  { store:'Store 452', address:'12233 JEFFERSON AVE., Newport News, VA 23602', lat:37.0871, lon:-76.473 },
+  { store:'Store 466', address:'6641 FALLS OF NEUSE RD., Raleigh, NC 27615', lat:35.9201, lon:-78.6543 },
+  { store:'Store 479', address:'7601 W BROAD ST., Henrico, VA 23294', lat:37.5538, lon:-77.3197 },
+  { store:'Store 663', address:'4212 W WENDOVER AVE., Greensboro, NC 27407', lat:36.0726, lon:-79.792 },
+  { store:'Store 710', address:'223 CROSSROADS BLVD., Cary, NC 27518', lat:35.7915, lon:-78.7811 },
+  { store:'Store 722', address:'330 S COLLEGE RD., Wilmington, NC 28403', lat:34.2257, lon:-77.9447 },
+  { store:'Store 732', address:'729 BATTLEFIELD BLVD., Chesapeake, VA 23322', lat:36.7101, lon:-76.2543 },
+  { store:'Store 761', address:'1030 S MAIN ST., Kernersville, NC 27284', lat:36.1196, lon:-80.0745 },
+  { store:'Store 799', address:'4512 PRINCESS ANNE RD., Virginia Beach, VA 23462', lat:36.8201, lon:-76.0498 },
+  { store:'Store 854', address:'2217 UPTON DR., Virginia Beach, VA 23454', lat:36.8201, lon:-76.0498 },
+  { store:'Store 855', address:'3200 ACADEMY AVE., Portsmouth, VA 23703', lat:36.8354, lon:-76.2983 },
+  { store:'Store 870', address:'181 GLENSFORD DR., Fayetteville, NC 28314', lat:35.0527, lon:-78.8784 },
+  { store:'Store 938', address:'7454 TIDEWATER DR., Norfolk, VA 23505', lat:36.9201, lon:-76.2859 },
+  { store:'Store 952', address:'11382 MIDLOTHIAN TPKE., Richmond, VA 23235', lat:37.5109, lon:-77.5876 },
+  { store:'Store 1505', address:'3710 S COLLEGE RD., Wilmington, NC 28412', lat:34.1876, lon:-77.9087 },
+];
+
+const D42_STORES = [
+  { store:'Store 40', address:'9800 SHELBYVILLE RD., LOUISVILLE, KY 40223', lat:38.2527, lon:-85.7585 },
+  { store:'Store 80', address:'9721 KENWOOD RD., BLUE ASH, OH 45242', lat:39.232, lon:-84.3783 },
+  { store:'Store 186', address:'5038 GLENCROSSING WAY STE. 176, CINCINNATI, OH 45238', lat:39.1031, lon:-84.512 },
+  { store:'Store 276', address:'9796 COLERAIN AVE, CINCINNATI, OH 45251', lat:39.2501, lon:-84.6101 },
+  { store:'Store 315', address:'8000 DIXIE HWY., LOUISVILLE, KY 40258', lat:38.1501, lon:-85.8101 },
+  { store:'Store 326', address:'25 PRESTIGE PLAZA DR., MIAMISBURG, OH 45342', lat:39.6428, lon:-84.2913 },
+  { store:'Store 353', address:'550 OHIO PIKE, CINCINNATI, OH 45255', lat:39.0701, lon:-84.3901 },
+  { store:'Store 378', address:'159 N BURKARDT RD., EVANSVILLE, IN 47715', lat:37.9716, lon:-87.5711 },
+  { store:'Store 421', address:'7130 PRESTON HWY., LOUISVILLE, KY 40219', lat:38.1187, lon:-85.7101 },
+  { store:'Store 446', address:'130 WEST TIVERTON WAY, LEXINGTON, KY 40503', lat:38.0406, lon:-84.5037 },
+  { store:'Store 647', address:'1050 GLENBROOK WAY STE. 100, HENDERSONVILLE, TN 37075', lat:36.3048, lon:-86.62 },
+  { store:'Store 763', address:'3343 PRINCETON ROAD, HAMILTON, OH 45011', lat:39.3995, lon:-84.5613 },
+  { store:'Store 823', address:'7564 VOICE OF AMERICA DR STE. 6, WEST CHESTER, OH 45069', lat:39.3559, lon:-84.4046 },
+  { store:'Store 877', address:'2445 MEMORIAL BLVD STE. F, MURFREESBORO, TN 37129', lat:35.8456, lon:-86.3903 },
+  { store:'Store 915', address:'300 PLEASANT GROVE RD STE. 425, MOUNT JULIET, TN 37122', lat:36.2001, lon:-86.5186 },
+  { store:'Store 922', address:'1625 CAMPBELL LANE, BOWLING GREEN, KY 42104', lat:36.9685, lon:-86.4808 },
+  { store:'Store 939', address:'615 BAKERS BRIDGE AVE STE 170., FRANKLIN, TN 37067', lat:35.9251, lon:-86.8689 },
+  { store:'Store 959', address:'73 WHITE BRIDGE PIKE, NASHVILLE, TN 37205', lat:36.1627, lon:-86.7816 },
+  { store:'Store 971', address:'1370 VETERANS PKWY STE. 500, CLARKSVILLE, IN 47129', lat:38.3218, lon:-85.7641 },
+];
+
+const D43_STORES = [
+  { store:'Store 107', address:'709 Queen St Ste 6, Southington, CT 06489', lat:41.5965, lon:-72.8776 },
+  { store:'Store 151', address:'464 Boston Post Rd Ste 2, Orange, CT 06477', lat:41.2787, lon:-73.0273 },
+  { store:'Store 160', address:'3221 Berlin Tpke, Newington, CT 06111', lat:41.6976, lon:-72.7315 },
+  { store:'Store 169', address:'120 Main St, Weymouth, MA 02188', lat:42.2168, lon:-70.941 },
+  { store:'Store 192', address:'8 Newbury St Ste 8 Bldg D, Danvers, MA 01923', lat:42.5751, lon:-70.93 },
+  { store:'Store 213', address:'87 Boston Tpke #4, Shrewsbury, MA 01545', lat:42.2954, lon:-71.719 },
+  { store:'Store 246', address:'91 Hale Rd, Manchester, CT 06042', lat:41.7759, lon:-72.5215 },
+  { store:'Store 273', address:'121 Elm St, Enfield, CT 06082', lat:41.9762, lon:-72.5918 },
+  { store:'Store 282', address:'876 Boston Rd, Billerica, MA 01821', lat:42.5584, lon:-71.2689 },
+  { store:'Store 285', address:'1089 Bald Hill Rd, Warwick, RI 02886', lat:41.7001, lon:-71.4162 },
+  { store:'Store 304', address:'526 S Broadway, Salem, NH 03079', lat:42.7898, lon:-71.2006 },
+  { store:'Store 306', address:'1258 S Broad St, Wallingford, CT 06492', lat:41.4573, lon:-72.8232 },
+  { store:'Store 343', address:'272 Columbia Rd #6, Hanover, MA 02339', lat:42.1126, lon:-70.8134 },
+  { store:'Store 406', address:'100 Cahill Ave, Manchester, NH 03103', lat:42.9956, lon:-71.4548 },
+  { store:'Store 486', address:'1335 Boston-Providence Turnpike, Norwood, MA 02062', lat:42.1945, lon:-71.1995 },
+  { store:'Store 724', address:'760 Worcester Rd, Framingham, MA 01702', lat:42.2793, lon:-71.4162 },
+  { store:'Store 743', address:'454 Bridgeport Ave, Milford, CT 06460', lat:41.2223, lon:-73.0573 },
+  { store:'Store 744', address:'2852 Main St, Glastonbury, CT 06033', lat:41.7026, lon:-72.6082 },
+  { store:'Store 765', address:'1285 Belmont St Ste 6 7, Brockton, MA 02301', lat:42.0834, lon:-71.0184 },
+  { store:'Store 833', address:'123 Farmington Ave Ste 25, Bristol, CT 06010', lat:41.6718, lon:-72.9493 },
+  { store:'Store 905', address:'185 Washington St Ste a, Attleboro, MA 02703', lat:41.9445, lon:-71.2956 },
+  { store:'Store 950', address:'293 Daniel Webster Hwy, Nashua, NH 03060', lat:42.7654, lon:-71.4676 },
+  { store:'Store 1054', address:'38 Pershing Dr, Derby, CT 06418', lat:41.3201, lon:-73.0873 },
+];
+
+const D44_STORES = [
+  { store:'Store 103', address:'8131 RITCHIE HWY STE B, MD 21122-6940', lat:39.1501, lon:-76.6301 },
+  { store:'Store 1071', address:'1142 PULASKI HWY UNIT 6B, DE 19701-1306', lat:39.584, lon:-75.731 },
+  { store:'Store 108', address:'5200 NICHOLSON LN, MD 20895-1045', lat:39.0331, lon:-77.051 },
+  { store:'Store 1097', address:'200 GROVE LN, DE 19711-5489', lat:39.731, lon:-75.7468 },
+  { store:'Store 156', address:'412 MAPLE AVE E STE 1, VA 22180-4721', lat:38.9001, lon:-77.1543 },
+  { store:'Store 167', address:'580 BALTIMORE PIKE, MD 21014-4331', lat:39.5345, lon:-76.3398 },
+  { store:'Store 170', address:'13910 SHOPPERS BEST WAY, VA 22192-4130', lat:38.6301, lon:-77.3201 },
+  { store:'Store 207', address:'4723 KIRKWOOD HWY STE D, DE 19808-5014', lat:39.7198, lon:-75.7143 },
+  { store:'Store 219', address:'4113 WHOLESALE CLUB DR STE 100, MD 21236-3413', lat:39.3701, lon:-76.5198 },
+  { store:'Store 3018', address:'300 COMMODORE DR, NJ 08085-2500', lat:39.7531, lon:-75.3543 },
+  { store:'Store 303', address:'3864 UNION DEPOSIT RD, PA 17109-5919', lat:40.2901, lon:-76.8198 },
+  { store:'Store 359', address:'1211 MERRITT BLVD STE D-4, MD 21222-1439', lat:39.2565, lon:-76.5128 },
+  { store:'Store 382', address:'984 LOUCKS RD STE G&H, PA 17404-2274', lat:39.9501, lon:-76.7465 },
+  { store:'Store 407', address:'1285 MANHEIM PIKE STE 1, PA 17601-3151', lat:40.0501, lon:-76.3498 },
+  { store:'Store 824', address:'10029 YORK RD STE A&B, MD 21030-3303', lat:39.5751, lon:-76.6543 },
+  { store:'Store 829', address:'9970 LIBERIA AVE, VA 20110-7052', lat:38.7501, lon:-77.4543 },
+  { store:'Store 861', address:'1450 RITCHIE HWY STE 110, MD 21012-2497', lat:39.1501, lon:-76.6301 },
+  { store:'Store 866', address:'5517 CARLISLE PIKE, PA 17050-2414', lat:40.2501, lon:-77.0198 },
+  { store:'Store 891', address:'400 ENGLAR RD STE 1B, MD 21157-6187', lat:39.5801, lon:-77.0143 },
+  { store:'Store 928', address:'7607 RICHMOND HWY, VA 22306-', lat:38.7401, lon:-77.0798 },
+  { store:'Store 942', address:'913 REISTERSTOWN RD, MD 21208-', lat:39.4501, lon:-76.7798 },
+];
+
+const D46_STORES = [
+  { store:'Store 1069', address:'FREEPORT, NY #1069, NY 11520-', lat:40.6443, lon:-73.5832 },
+  { store:'Store 150', address:'GREENVALE, NY #150, NY 11548-1007', lat:40.7965, lon:-73.6287 },
+  { store:'Store 1509', address:'Hicksville #1509, NY 11801-5034', lat:40.7682, lon:-73.5254 },
+  { store:'Store 188', address:'LYNBROOK, NY #188, NY 11563-2815', lat:40.6565, lon:-73.6743 },
+  { store:'Store 275', address:'HUNTINGTON,NY #275, NY 11746-7505', lat:40.8093, lon:-73.3932 },
+  { store:'Store 279', address:'WANTAGH, NY #279, NY 11793-4331', lat:40.6826, lon:-73.5154 },
+  { store:'Store 35', address:'LEVITTOWN, NY #35, NY 11756-1310', lat:40.7265, lon:-73.5143 },
+  { store:'Store 379', address:'LINDENHURST, NY #379, NY 11757-2506', lat:40.6826, lon:-73.3665 },
+  { store:'Store 414', address:'PORT JEFFERSON STATION, NY#414, NY 11776-2576', lat:40.9143, lon:-73.0487 },
+  { store:'Store 588', address:'SHIRLEY, NY #588, NY 11967-3476', lat:40.7626, lon:-72.8654 },
+  { store:'Store 589', address:'EAST ISLIP, NY #589, NY 11730-2820', lat:40.7276, lon:-73.1876 },
+  { store:'Store 621', address:'SMITHTOWN, NY #621, NY 11787-2804', lat:40.8593, lon:-73.2054 },
+  { store:'Store 63', address:'COMMACK, NY #63, NY 11725-3432', lat:40.8462, lon:-73.2765 },
+  { store:'Store 696', address:'SYOSSET, NY #696, NY 11791-4519', lat:40.8276, lon:-73.5043 },
+  { store:'Store 705', address:'PATCHOGUE, NY #705, NY 11772-1334', lat:40.7687, lon:-73.0165 },
+  { store:'Store 742', address:'ROCKY POINT, NY #742, NY 11778-8992', lat:40.9243, lon:-72.9176 },
+  { store:'Store 746', address:'NEW HYDE PARK, NY #746, NY 11040-4707', lat:40.7398, lon:-73.6876 },
+  { store:'Store 95', address:'SAYVILLE, NY #95, NY 11782-1009', lat:40.7376, lon:-73.1043 },
+  { store:'Store 96', address:'CENTEREACH, NY #96, NY 11720-2712', lat:40.9087, lon:-73.0376 },
+  { store:'Store 970', address:'EAST NORTHPORT, NY #970, NY 11731-4218', lat:40.8793, lon:-73.3265 },
+];
+
+const D47_STORES = [
+  { store:'Store 122', address:'2326 MacArthur Rd, Whitehall Township, PA 18052', lat:40.6501, lon:-75.4698 },
+  { store:'Store 124', address:'831 Lancaster Ave, Wayne, PA 19087', lat:40.0415, lon:-75.3824 },
+  { store:'Store 155', address:'762 Bethlehem Pike, North Wales, PA 19454', lat:40.2115, lon:-75.2762 },
+  { store:'Store 174', address:'260 N Pottstown Pike Ste 9, Exton, PA 19341', lat:40.0284, lon:-75.6207 },
+  { store:'Store 209', address:'40 Greenfield Ave, Ardmore, PA 19003', lat:40.0076, lon:-75.2887 },
+  { store:'Store 210', address:'606 York Rd, Warminster, PA 18974', lat:40.1951, lon:-75.0887 },
+  { store:'Store 211', address:'636 Old York Rd Ste 2, Jenkintown, PA 19046', lat:40.094, lon:-75.129 },
+  { store:'Store 262', address:'4411 Concord Pike, Wilmington, DE 19803', lat:39.7447, lon:-75.5484 },
+  { store:'Store 286', address:'679 Kidder St, Wilkes-Barre, PA 18702', lat:41.2459, lon:-75.8813 },
+  { store:'Store 296', address:'104A W Germantown Pike, Norristown, PA 19401', lat:40.1215, lon:-75.3399 },
+  { store:'Store 341', address:'3801 Nazareth Pike, Bethlehem, PA 18020', lat:40.6259, lon:-75.3705 },
+  { store:'Store 370', address:'204 Shoemaker Rd Ste 7, Pottstown, PA 19464', lat:40.2448, lon:-75.6496 },
+  { store:'Store 395', address:'1025 Commerce Blvd, Scranton, PA 18519', lat:41.409, lon:-75.6624 },
+  { store:'Store 655', address:'1183 Berkshire Blvd, Reading, PA 19610', lat:40.3356, lon:-75.9269 },
+  { store:'Store 758', address:'1546 Paoli Pike, West Chester, PA 19380', lat:39.9626, lon:-75.6057 },
+  { store:'Store 768', address:'133 S West End Blvd, Quakertown, PA 18951', lat:40.4415, lon:-75.3413 },
+  { store:'Store 831', address:'3710 N Easton Rd Ste A, Doylestown, PA 18902', lat:40.3101, lon:-75.1299 },
+  { store:'Store 838', address:'789 W Sproul Rd #12, Springfield, PA 19064', lat:39.9309, lon:-75.3227 },
+  { store:'Store 946', address:'222 E Main St Unit 2, Collegeville, PA 19426', lat:40.1776, lon:-75.4521 },
+  { store:'Store 949', address:'1091 Mill Creek Rd Ste 13, Allentown, PA 18106', lat:40.6023, lon:-75.4714 },
+  { store:'Store 1096', address:'703 PA-113 Ste 9, Souderton, PA 18964', lat:40.3148, lon:-75.3243 },
+];
+
+const D49_STORES = [
+  { store:'Store 75', address:'201 W STREET RD, FEASTERVILLE, PA 19053', lat:40.1476, lon:-74.9613 },
+  { store:'Store 113', address:'472 STATE ROUTE 35, RED BANK, NJ 07701', lat:40.3468, lon:-74.0632 },
+  { store:'Store 126', address:'268 STATE ROUTE 18, EAST BRUNSWICK, NJ 08816', lat:40.4276, lon:-74.4174 },
+  { store:'Store 135', address:'110 LINCOLN HWY, FAIRLESS HILLS, PA 19030', lat:40.1793, lon:-74.8585 },
+  { store:'Store 157', address:'1930 STATE HIGHWAY 88, BRICK, NJ 08724', lat:40.0584, lon:-74.1099 },
+  { store:'Store 184', address:'2070 ROUTE 70 E SUITE 4, CHERRY HILL, NJ 08003', lat:39.9348, lon:-75.0241 },
+  { store:'Store 226', address:'4060 US HIGHWAY 9, HOWELL, NJ 07731', lat:40.1851, lon:-74.1963 },
+  { store:'Store 280', address:'1013 ROUTE 130 SOUTH, CINNAMINSON, NJ 08077', lat:40.0026, lon:-74.9985 },
+  { store:'Store 309', address:'3371 BRUNSWICK PIKE UNIT 14, LAWRENCEVILLE, NJ 08648', lat:40.2987, lon:-74.7357 },
+  { store:'Store 336', address:'10 ROUTE 37 E UNIT 6, TOMS RIVER, NJ 08753', lat:39.9537, lon:-74.1979 },
+  { store:'Store 404', address:'2335 STREET RD, BENSALEM, PA 19020', lat:40.104, lon:-74.9349 },
+  { store:'Store 416', address:'3681 ROUTE 9 NORTH UNIT 9, FREEHOLD, NJ 07728', lat:40.2615, lon:-74.2729 },
+  { store:'Store 425', address:'1470 STATE ROUTE 36, HAZLET, NJ 07730', lat:40.426, lon:-74.1638 },
+  { store:'Store 661', address:'950 STATE HWY 33 STE5 70 S 80, TRENTON, NJ 08690', lat:40.2171, lon:-74.7429 },
+  { store:'Store 759', address:'415 EGG HARBOR ROAD, SEWELL, NJ 08080', lat:39.7526, lon:-75.1435 },
+  { store:'Store 832', address:'5 JACKSON ROAD, MEDFORD, NJ 08055', lat:39.8701, lon:-74.8249 },
+  { store:'Store 895', address:'297 ROUTE 72 W, MANAHAWKIN, NJ 08050', lat:39.6973, lon:-74.2585 },
+  { store:'Store 914', address:'1901 ROUTE 35, WALL TOWNSHIP, NJ 07719', lat:40.1676, lon:-74.0596 },
+  { store:'Store 1063', address:'650 WEST CUTHBERT BLVD, WESTMONT, NJ 08108', lat:39.8987, lon:-75.0491 },
+  { store:'Store 1083', address:'344 MAIN STREET STE 11, LANOKA HARBOR, NJ 08734', lat:39.8526, lon:-74.2263 },
+];
+
+const D51_STORES = [
+  { store:'Store 109', address:'151 Westport Ave, Norwalk, CT 06851', lat:41.1177, lon:-73.4082 },
+  { store:'Store 111', address:'1817 South Rd UNIT 1, Wappingers Falls, NY 12590', lat:41.5987, lon:-73.9096 },
+  { store:'Store 127', address:'579 Troy-Schenectady Rd #224, Latham, NY 12110', lat:42.7426, lon:-73.7579 },
+  { store:'Store 148', address:'288 Tarrytown Rd, White Plains NY 10607', lat:41.034, lon:-73.7629 },
+  { store:'Store 149', address:'447 NJ-17, Paramus NJ 07652', lat:40.9448, lon:-74.0712 },
+  { store:'Store 154', address:'119 US-22, Green Brook Township NJ 08812', lat:40.6048, lon:-74.481 },
+  { store:'Store 172', address:'110 NY-59, Nanuet NY 10954', lat:41.0873, lon:-74.0121 },
+  { store:'Store 214', address:'525 Tunxis Hill Cut Off Ste 11, Fairfield, CT 06825', lat:41.1415, lon:-73.2637 },
+  { store:'Store 223', address:'350 Ramapo Valley Rd, Oakland NJ 07436', lat:41.0304, lon:-74.2335 },
+  { store:'Store 239', address:'271 US-22, Springfield NJ 07081', lat:40.7012, lon:-74.3207 },
+  { store:'Store 277', address:'1132 US-46, Clifton NJ 07013', lat:40.8584, lon:-74.164 },
+  { store:'Store 298', address:'355 Universal Dr N North Haven CT 06473', lat:41.3915, lon:-72.8596 },
+  { store:'Store 364', address:'352 NJ 23, Pompton Plains NJ 07444', lat:40.9726, lon:-74.2999 },
+  { store:'Store 394', address:'3067 US-46 Unit E, Parsippany-Troy Hills 07054', lat:40.8579, lon:-74.4254 },
+  { store:'Store 721', address:'150 N Main St, Manville NJ 08835', lat:40.5448, lon:-74.5885 },
+  { store:'Store 733', address:'72 Newtown Rd Ste 1, Danbury, CT 06810', lat:41.3948, lon:-73.454 },
+  { store:'Store 860', address:'469 NY-211, Middletown, NY 10940', lat:41.4459, lon:-74.4229 },
+  { store:'Store 947', address:'305 West Ave Ste 305-1, Stamford, CT 06902', lat:41.0534, lon:-73.5387 },
+  { store:'Store 948', address:'275 NJ-10 #190, Succasunna NJ 07876', lat:40.8551, lon:-74.6562 },
+  { store:'Store 985', address:'1300 NJ-17, Ramsey NJ 07446', lat:41.0573, lon:-74.1424 },
+  { store:'Store 1082', address:'500 S River St Ste 6B, Hackensack NJ 07601', lat:40.8859, lon:-74.0435 },
+  { store:'Store 357', address:'178 NJ-35, Eatontown NJ 07724', lat:40.2948, lon:-74.0588 },
+];
+
+const DISTRICTS = [
+  { district:28, name:'Kansas City, MO', lat:39.0997, lon:-94.5786 },
+  { district:33, name:'Memphis, TN', lat:35.1495, lon:-90.049 },
+  { district:34, name:'Oklahoma City, OK', lat:35.4676, lon:-97.5164 },
+  { district:36, name:'Atlanta, GA (36)', lat:33.749, lon:-84.388 },
+  { district:37, name:'Atlanta, GA (37)', lat:33.749, lon:-84.388 },
+  { district:38, name:'Chicago, IL', lat:41.8781, lon:-87.6298 },
+  { district:39, name:'Cleveland, OH', lat:41.4993, lon:-81.6944 },
+  { district:40, name:'Charlotte, NC', lat:35.2271, lon:-80.8431 },
+  { district:41, name:'Virginia Beach, VA', lat:36.8529, lon:-75.978 },
+  { district:42, name:'Nashville, TN', lat:36.1627, lon:-86.7816 },
+  { district:43, name:'Boston, MA', lat:42.3601, lon:-71.0589 },
+  { district:44, name:'Baltimore, MD', lat:39.2904, lon:-76.6122 },
+  { district:46, name:'Long Island, NY', lat:40.7891, lon:-73.135 },
+  { district:47, name:'Philadelphia, PA', lat:39.9526, lon:-75.1652 },
+  { district:49, name:'Brick, NJ', lat:40.0584, lon:-74.1099 },
+  { district:51, name:'Stamford, CT', lat:41.0534, lon:-73.5387 },
+];
+
+const STORE_DISTRICTS = {
+  28: D28_STORES,
+  33: D33_STORES,
+  34: D34_STORES,
+  36: D36_STORES,
+  37: D37_STORES,
+  38: D38_STORES,
+  39: D39_STORES,
+  40: D40_STORES,
+  41: D41_STORES,
+  42: D42_STORES,
+  43: D43_STORES,
+  44: D44_STORES,
+  46: D46_STORES,
+  47: D47_STORES,
+  49: D49_STORES,
+  51: D51_STORES,
+};
+
+// ── Date helpers ──────────────────────────────────────────────────────────
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function fmtDate(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function fmtDayLabel(s){ return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+function getDateRange(){
+  const t=new Date();
+  return { start26:fmtDate(t), end26:fmtDate(addDays(t,6)), start25:fmtDate(addDays(t,-365)), end25:fmtDate(addDays(t,-359)) };
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+const mkRecord = o => ({...o,
+  temp26:null, rain26:null, sun26:null, cloud26:null,
+  temp25:null, rain25:null, sun25:null, cloud25:null,
+  days26:null, days25:null,
+  loaded26:false, loaded25:false, err26:null, err25:null, pending:true
+});
+
+let districtResults = DISTRICTS.map(mkRecord);
+// Build combined store results for all districts with stores
+const ALL_STORE_ENTRIES = Object.entries(STORE_DISTRICTS).flatMap(([d,stores])=>
+  stores.map(s=>({...s, districtNum:parseInt(d)}))
+);
+let storeResults = ALL_STORE_ENTRIES.map(mkRecord);
+let expandedDistricts = new Set();
+let expandedStores    = new Set();
+
+// ── Visual helpers ────────────────────────────────────────────────────────
+const badgeClass = t => t>=75?'hot':t>=65?'warm':t>=55?'cool':'cold';
+const condLabel  = t => t>=75?'Hot':t>=65?'Warm':t>=55?'Cool':'Cold';
+const spin = '<span class="spin"></span>';
+
+function sunBar(hrs, maxW=48){
+  const w=Math.max(Math.round(Math.min(hrs/14,1)*maxW),2);
+  return `<div class="sun-wrap"><div class="sun-bar" style="width:${w}px"></div><span style="font-size:11.5px;color:#666;white-space:nowrap">${hrs.toFixed(1)} hrs</span></div>`;
+}
+
+function cloudBar(pct){
+  const cls = pct>=70?'cloud-heavy':pct>=35?'cloud-partly':'cloud-light';
+  const label = pct>=70?'Heavy':pct>=35?'Partly':'Light';
+  return `<div class="cloud-wrap">
+    <div class="cloud-bar-bg"><div class="cloud-bar-fill" style="width:${Math.round(pct)}%"></div></div>
+    <span class="cloud-badge ${cls}" style="font-size:11px;padding:1px 6px">${Math.round(pct)}% <span style="font-weight:400;opacity:0.75">${label}</span></span>
+  </div>`;
+}
+
+function deltaHtml(val, unit){
+  if(val===null||isNaN(val)) return '<span class="delta-neu">—</span>';
+  const thr = unit==='rain'?0.05:unit==='cloud'?2:0.4;
+  const cls = Math.abs(val)<thr?'delta-neu':val>0?'delta-pos':'delta-neg';
+  const arr = Math.abs(val)<thr?'≈':val>0?'▲':'▼';
+  const sign = val>0?'+':'';
+  let disp;
+  if(unit==='rain')  disp=`${sign}${val.toFixed(2)} in`;
+  else if(unit==='sun')   disp=`${sign}${val.toFixed(1)} hrs`;
+  else if(unit==='cloud') disp=`${sign}${Math.round(val)}%`;
+  else                    disp=`${sign}${val.toFixed(1)}°F`;
+  return `<span class="${cls}">${arr} ${disp}</span>`;
+}
+
+function rowCells(r){
+  const ok26=r.loaded26&&!r.err26, ok25=r.loaded25&&!r.err25, ok=ok26&&ok25;
+  const t26   = r.pending?'—':!r.loaded26?spin:!ok26?`<span class="err-cell" title="${r.err26}">Error</span>`:`<span class="badge ${badgeClass(r.temp26)}">${r.temp26.toFixed(1)}°F</span>`;
+  const rn26  = r.pending?'—':!r.loaded26?spin:!ok26?'—':`${r.rain26.toFixed(2)} in`;
+  const s26   = r.pending?'—':!r.loaded26?spin:!ok26?'—':sunBar(r.sun26);
+  const cl26  = r.pending?'—':!r.loaded26?spin:!ok26?'—':(r.cloud26!=null?cloudBar(r.cloud26):'—');
+  const t25   = r.pending?'—':!r.loaded25?spin:!ok25?`<span class="err-cell">Error</span>`:`<span style="font-size:11.5px;color:#6b3faa">${r.temp25.toFixed(1)}°F</span>`;
+  const rn25  = r.pending?'—':!r.loaded25?spin:!ok25?'—':`<span style="font-size:11.5px;color:#6b3faa">${r.rain25.toFixed(2)} in</span>`;
+  const s25   = r.pending?'—':!r.loaded25?spin:!ok25?'—':`<span style="font-size:11.5px;color:#6b3faa">${r.sun25.toFixed(1)} hrs</span>`;
+  const cl25  = r.pending?'—':!r.loaded25?spin:!ok25?'—':(r.cloud25!=null?`<span style="font-size:11.5px;color:#6b3faa">${Math.round(r.cloud25)}%</span>`:'—');
+  const dT  = ok?deltaHtml(r.temp26-r.temp25,'temp'):'—';
+  const dR  = ok?deltaHtml(r.rain26-r.rain25,'rain'):'—';
+  const dS  = ok?deltaHtml(r.sun26-r.sun25,'sun'):'—';
+  const dCl = (ok&&r.cloud26!=null&&r.cloud25!=null)?deltaHtml(r.cloud26-r.cloud25,'cloud'):'—';
+  return `<td>${t26}</td><td>${rn26}</td><td>${s26}</td><td>${cl26}</td>
+          <td>${t25}</td><td>${rn25}</td><td>${s25}</td><td>${cl25}</td>
+          <td>${dT}</td><td>${dR}</td><td>${dS}</td><td>${dCl}</td>`;
+}
+
+// ── Daily table builder ───────────────────────────────────────────────────
+function buildDailyTable(r){
+  const r26=r.days26||[], r25=r.days25||[], len=Math.max(r26.length,r25.length);
+  if(!len) return '<p style="padding:10px 12px;font-size:12px;color:#aaa">No daily data yet.</p>';
+  let html=`<div class="daily-wrap"><table class="daily-tbl"><thead>
+    <tr><th rowspan="2" style="width:88px">Date</th>
+      <th colspan="5">2026 — Daily</th>
+      <th colspan="5" class="dg-hist">2025 — Same Day</th>
+      <th colspan="4" class="dg-diff">Day Δ</th></tr>
+    <tr>
+      <th>High</th><th>Low</th><th>Rain</th><th>Sunlight</th><th>Cloud</th>
+      <th class="dg-hist">High</th><th class="dg-hist">Low</th><th class="dg-hist">Rain</th><th class="dg-hist">Sunlight</th><th class="dg-hist">Cloud</th>
+      <th class="dg-diff">Temp</th><th class="dg-diff">Rain</th><th class="dg-diff">Sun</th><th class="dg-diff">Cloud</th>
+    </tr></thead><tbody>`;
+  for(let i=0;i<len;i++){
+    const d6=r26[i], d5=r25[i];
+    html+=`<tr>
+      <td style="font-size:11px;font-weight:500">${d6?fmtDayLabel(d6.date):''}</td>
+      <td>${d6?`<span class="badge ${badgeClass(d6.tHigh)}">${d6.tHigh.toFixed(0)}°F</span>`:'—'}</td>
+      <td style="color:#666">${d6?d6.tLow.toFixed(0)+'°F':'—'}</td>
+      <td>${d6?d6.rain.toFixed(2)+' in':'—'}</td>
+      <td>${d6&&d6.sun!=null?sunBar(d6.sun,36):'—'}</td>
+      <td>${d6&&d6.cloud!=null?cloudBar(d6.cloud):'—'}</td>
+      <td style="color:#6b3faa">${d5?d5.tHigh.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#9b7fcc">${d5?d5.tLow.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#6b3faa">${d5?d5.rain.toFixed(2)+' in':'—'}</td>
+      <td style="color:#6b3faa">${d5&&d5.sun!=null?d5.sun.toFixed(1)+' hrs':'—'}</td>
+      <td style="color:#6b3faa">${d5&&d5.cloud!=null?Math.round(d5.cloud)+'%':'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.tAvg-d5.tAvg,'temp'):'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.rain-d5.rain,'rain'):'—'}</td>
+      <td>${(d6&&d5&&d6.sun!=null&&d5.sun!=null)?deltaHtml(d6.sun-d5.sun,'sun'):'—'}</td>
+      <td>${(d6&&d5&&d6.cloud!=null&&d5.cloud!=null)?deltaHtml(d6.cloud-d5.cloud,'cloud'):'—'}</td>
+    </tr>`;
+  }
+  return html+'</tbody></table></div>';
+}
+
+// ── Store panel ───────────────────────────────────────────────────────────
+function buildStorePanel(districtNum){
+  const distStores = storeResults.filter(s=>s.districtNum===districtNum);
+  const loaded=distStores.filter(s=>s.loaded26&&s.loaded25).length;
+  let html=`<div class="store-wrap">
+    <div class="store-header">
+      <span>District ${districtNum} — Store-Level Weather (${distStores.length} stores)</span>
+      <small>${loaded} of ${distStores.length} loaded · click a store row to see daily breakdown</small>
+    </div>
+    <table class="store-tbl"><thead>
+      <tr><th rowspan="2" style="width:20px"></th><th rowspan="2">Store</th><th rowspan="2">Address</th>
+        <th colspan="4">This week (2026)</th>
+        <th colspan="4" class="sg-hist">Same week 2025</th>
+        <th colspan="4" class="sg-diff">Δ</th></tr>
+      <tr>
+        <th>Avg Temp</th><th>Rainfall</th><th>Avg Sun</th><th>Avg Cloud</th>
+        <th class="sg-hist">Avg Temp</th><th class="sg-hist">Rainfall</th><th class="sg-hist">Avg Sun</th><th class="sg-hist">Avg Cloud</th>
+        <th class="sg-diff">Temp Δ</th><th class="sg-diff">Rain Δ</th><th class="sg-diff">Sun Δ</th><th class="sg-diff">Cloud Δ</th>
+      </tr></thead><tbody>`;
+  distStores.forEach(s=>{
+    const isExp=expandedStores.has(s.store);
+    html+=`<tr class="summary-row${isExp?' expanded':''}" onclick="toggleStore('${s.store.replace(/'/g,"\\'")}')">
+      <td><span class="toggle-arrow">▶</span></td>
+      <td style="font-weight:500;font-size:12px">${s.store}</td>
+      <td style="font-size:11px;color:#888">${s.address}</td>
+      ${rowCells(s)}
+    </tr>`;
+    html+=`<tr class="store-daily-group${isExp?' visible':''}" id="sdg-${s.store.replace(/\s/g,'-')}">
+      <td colspan="15"><div class="store-daily-inner">${buildStoreDailyTable(s)}</div></td>
+    </tr>`;
+  });
+  return html+'</tbody></table></div>';
+}
+
+function buildStoreDailyTable(r){
+  const r26=r.days26||[], r25=r.days25||[], len=Math.max(r26.length,r25.length);
+  if(!len) return '<p style="padding:8px 12px;font-size:11px;color:#aaa">No daily data yet.</p>';
+  let html=`<table><thead>
+    <tr><th rowspan="2" style="width:88px">Date</th>
+      <th colspan="5">2026</th><th colspan="5" class="sdg-hist">2025</th><th colspan="4" class="sdg-diff">Δ</th></tr>
+    <tr>
+      <th>High</th><th>Low</th><th>Rain</th><th>Sun</th><th>Cloud</th>
+      <th class="sdg-hist">High</th><th class="sdg-hist">Low</th><th class="sdg-hist">Rain</th><th class="sdg-hist">Sun</th><th class="sdg-hist">Cloud</th>
+      <th class="sdg-diff">Temp</th><th class="sdg-diff">Rain</th><th class="sdg-diff">Sun</th><th class="sdg-diff">Cloud</th>
+    </tr></thead><tbody>`;
+  for(let i=0;i<len;i++){
+    const d6=r26[i], d5=r25[i];
+    html+=`<tr>
+      <td style="font-weight:500">${d6?fmtDayLabel(d6.date):''}</td>
+      <td>${d6?`<span class="badge ${badgeClass(d6.tHigh)}" style="font-size:11px">${d6.tHigh.toFixed(0)}°F</span>`:'—'}</td>
+      <td style="color:#666">${d6?d6.tLow.toFixed(0)+'°F':'—'}</td>
+      <td>${d6?d6.rain.toFixed(2)+' in':'—'}</td>
+      <td>${d6&&d6.sun!=null?d6.sun.toFixed(1)+' hrs':'—'}</td>
+      <td>${d6&&d6.cloud!=null?Math.round(d6.cloud)+'%':'—'}</td>
+      <td style="color:#6b3faa">${d5?d5.tHigh.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#9b7fcc">${d5?d5.tLow.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#6b3faa">${d5?d5.rain.toFixed(2)+' in':'—'}</td>
+      <td style="color:#6b3faa">${d5&&d5.sun!=null?d5.sun.toFixed(1)+' hrs':'—'}</td>
+      <td style="color:#6b3faa">${d5&&d5.cloud!=null?Math.round(d5.cloud)+'%':'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.tAvg-d5.tAvg,'temp'):'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.rain-d5.rain,'rain'):'—'}</td>
+      <td>${(d6&&d5&&d6.sun!=null&&d5.sun!=null)?deltaHtml(d6.sun-d5.sun,'sun'):'—'}</td>
+      <td>${(d6&&d5&&d6.cloud!=null&&d5.cloud!=null)?deltaHtml(d6.cloud-d5.cloud,'cloud'):'—'}</td>
+    </tr>`;
+  }
+  return html+'</tbody></table>';
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function renderTable(){
+  const sort=document.getElementById('sort-sel').value;
+  let rows=[...districtResults];
+  if(sort==='location') rows.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort==='temp')  rows.sort((a,b)=>(b.temp26??-999)-(a.temp26??-999));
+  else if(sort==='rain')  rows.sort((a,b)=>(b.rain26??-999)-(a.rain26??-999));
+  else if(sort==='sun')   rows.sort((a,b)=>(b.sun26??-999)-(a.sun26??-999));
+  else if(sort==='cloud') rows.sort((a,b)=>(b.cloud26??-999)-(a.cloud26??-999));
+  else if(sort==='delta') rows.sort((a,b)=>{
+    const da=(a.temp26!=null&&a.temp25!=null)?a.temp26-a.temp25:-9999;
+    const db=(b.temp26!=null&&b.temp25!=null)?b.temp26-b.temp25:-9999;
+    return db-da;
+  }); else rows.sort((a,b)=>a.district-b.district);
+
+  let html='';
+  rows.forEach(r=>{
+    const isExp=expandedDistricts.has(r.district), isD38=!!STORE_DISTRICTS[r.district];
+    html+=`<tr class="summary-row${isExp?' expanded':''}${isD38?' d38-row':''}" onclick="toggleDistrict(${r.district})">
+      <td><span class="toggle-arrow">▶</span></td>
+      <td style="font-weight:500">${r.name}${isD38?` <span style="font-size:10px;background:#fef3c0;color:#854F0B;padding:1px 5px;border-radius:3px;margin-left:4px">${STORE_DISTRICTS[r.district].length} stores</span>`:''}</td>
+      <td>${r.district}</td>${rowCells(r)}
+    </tr>`;
+    html+=`<tr class="expand-group${isExp?' visible':''}" id="exp-${r.district}">
+      <td colspan="15">${STORE_DISTRICTS[r.district]?buildStorePanel(r.district):buildDailyTable(r)}</td>
+    </tr>`;
+  });
+  document.getElementById('tbody').innerHTML=html;
+  updateCards();
+}
+
+function toggleDistrict(d){ expandedDistricts.has(d)?expandedDistricts.delete(d):expandedDistricts.add(d); renderTable(); }
+function toggleStore(s){ expandedStores.has(s)?expandedStores.delete(s):expandedStores.add(s); renderTable(); }
+function expandAll(){ DISTRICTS.forEach(d=>expandedDistricts.add(d.district)); renderTable(); }
+function collapseAll(){ expandedDistricts.clear(); expandedStores.clear(); renderTable(); }
+
+function updateCards(){
+  const d26=districtResults.filter(r=>!r.pending&&r.loaded26&&!r.err26&&r.temp26!=null);
+  const d25=districtResults.filter(r=>!r.pending&&r.loaded25&&!r.err25&&r.temp25!=null);
+  const both=districtResults.filter(r=>d26.includes(r)&&d25.includes(r));
+  if(d26.length){
+    document.getElementById('s-temp-now').textContent=(d26.reduce((s,r)=>s+r.temp26,0)/d26.length).toFixed(1)+'°F';
+    const sd=d26.filter(r=>r.sun26!=null);
+    if(sd.length) document.getElementById('s-sun-now').textContent=(sd.reduce((s,r)=>s+r.sun26,0)/sd.length).toFixed(1)+' hrs';
+    const cd=d26.filter(r=>r.cloud26!=null);
+    if(cd.length) document.getElementById('s-cloud-now').textContent=Math.round(cd.reduce((s,r)=>s+r.cloud26,0)/cd.length)+'%';
+    const hot=d26.reduce((a,b)=>a.temp26>b.temp26?a:b);
+    const wet=d26.reduce((a,b)=>a.rain26>b.rain26?a:b);
+    document.getElementById('s-hot').textContent=hot.name.split(',')[0];
+    document.getElementById('s-hot-sub').textContent=hot.temp26.toFixed(1)+'°F avg';
+    document.getElementById('s-rain').textContent=wet.name.split(',')[0];
+    document.getElementById('s-rain-sub').textContent=wet.rain26.toFixed(2)+' in';
+  }
+  if(d25.length){
+    document.getElementById('s-temp-hist').textContent='2025: '+(d25.reduce((s,r)=>s+r.temp25,0)/d25.length).toFixed(1)+'°F';
+    const sd25=d25.filter(r=>r.sun25!=null);
+    if(sd25.length) document.getElementById('s-sun-hist').textContent='2025: '+(sd25.reduce((s,r)=>s+r.sun25,0)/sd25.length).toFixed(1)+' hrs';
+    const cd25=d25.filter(r=>r.cloud25!=null);
+    if(cd25.length) document.getElementById('s-cloud-hist').textContent='2025: '+Math.round(cd25.reduce((s,r)=>s+r.cloud25,0)/cd25.length)+'%';
+  }
+  if(both.length){
+    const avg=both.reduce((s,r)=>s+(r.temp26-r.temp25),0)/both.length;
+    document.getElementById('s-delta').textContent=(avg>0?'+':'')+avg.toFixed(1)+'°F';
+    document.getElementById('s-delta').style.color=avg>0.4?'#c0392b':avg<-0.4?'#185fa5':'#1c1c1a';
+    document.getElementById('s-delta-sub').textContent=`avg across ${both.length} districts`;
+  }
+}
+
+// ── Open-Meteo API ────────────────────────────────────────────────────────
+async function callOpenMeteo(lat, lon, start, end, isArchive){
+  const base = isArchive
+    ? 'https://customer-archive-api.open-meteo.com/v1/archive'
+    : 'https://customer-api.open-meteo.com/v1/forecast';
+  const url = `${base}?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}`
+    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,daylight_duration,cloud_cover_mean`
+    + `&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=America%2FNew_York`
+    + `&apikey=${API_KEY}`;
+
+  let resp;
+  for(let attempt = 0; attempt < 4; attempt++){
+    resp = await fetch(url);
+    if(resp.status !== 429) break;
+    await new Promise(r => setTimeout(r, (attempt + 1) * 2000)); // 2s, 4s, 6s
+  }
+  if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  if(data.error) throw new Error(data.reason||'API error');
+
+  const tMax   = data.daily?.temperature_2m_max    ?? [];
+  const tMin   = data.daily?.temperature_2m_min    ?? [];
+  const precip = data.daily?.precipitation_sum     ?? [];
+  const daylen = data.daily?.daylight_duration     ?? [];
+  const clouds = data.daily?.cloud_cover_mean      ?? [];
+  const dates  = data.daily?.time                  ?? [];
+  if(!tMax.length) throw new Error('Empty response');
+
+  const days = tMax.map((mx,i) => ({
+    date:  dates[i]  ?? '',
+    tHigh: mx,
+    tLow:  tMin[i]   ?? mx,
+    tAvg:  (mx + (tMin[i] ?? mx)) / 2,
+    rain:  precip[i] ?? 0,
+    sun:   daylen[i] != null ? daylen[i] / 3600 : null,
+    cloud: clouds[i] != null ? clouds[i] : null,   // % 0–100
+  }));
+
+  const sunDays   = days.filter(d => d.sun   != null);
+  const cloudDays = days.filter(d => d.cloud != null);
+
+  return {
+    avgTemp:   days.reduce((s,d) => s+d.tAvg, 0) / days.length,
+    totalRain: days.reduce((s,d) => s+d.rain, 0),
+    avgSun:    sunDays.length   ? sunDays.reduce((s,d)=>s+d.sun,0)   / sunDays.length   : null,
+    avgCloud:  cloudDays.length ? cloudDays.reduce((s,d)=>s+d.cloud,0) / cloudDays.length : null,
+    days,
+  };
+}
+
+async function fetchRecord(record, idx, arr, start26, end26, start25, end25){
+  arr[idx].pending = false;
+  const [r26, r25] = await Promise.allSettled([
+    callOpenMeteo(record.lat, record.lon, start26, end26, false),
+    callOpenMeteo(record.lat, record.lon, start25, end25, true),
+  ]);
+  if(r26.status==='fulfilled'){
+    arr[idx].temp26=r26.value.avgTemp; arr[idx].rain26=r26.value.totalRain;
+    arr[idx].sun26=r26.value.avgSun;   arr[idx].cloud26=r26.value.avgCloud;
+    arr[idx].days26=r26.value.days;
+  } else { arr[idx].err26=r26.reason?.message||'Error'; }
+  arr[idx].loaded26=true;
+
+  if(r25.status==='fulfilled'){
+    arr[idx].temp25=r25.value.avgTemp; arr[idx].rain25=r25.value.totalRain;
+    arr[idx].sun25=r25.value.avgSun;   arr[idx].cloud25=r25.value.avgCloud;
+    arr[idx].days25=r25.value.days;
+  } else { arr[idx].err25=r25.reason?.message||'Error'; }
+  arr[idx].loaded25=true;
+  renderTable();
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+async function fetchAll(){
+  const btn=document.getElementById('run-btn');
+  btn.disabled=true; btn.textContent='Fetching…';
+  document.getElementById('export-btn').disabled=true;
+  document.getElementById('error-box').style.display='none';
+  document.getElementById('progress-wrap').style.display='block';
+  document.getElementById('progress-fill').style.width='0%';
+  document.getElementById('progress-label').textContent='Connecting to Open-Meteo…';
+  ['s-temp-now','s-temp-hist','s-sun-now','s-sun-hist','s-cloud-now','s-cloud-hist',
+   's-hot','s-hot-sub','s-rain','s-rain-sub','s-delta','s-delta-sub']
+    .forEach(id=>document.getElementById(id).textContent='—');
+
+  const {start26,end26,start25,end25}=getDateRange();
+  document.getElementById('date-range').textContent=
+    `Forecast ${start26} → ${end26}   vs.   same period 2025 (${start25} → ${end25})  ·  Open-Meteo`;
+
+  districtResults = DISTRICTS.map(mkRecord);
+  storeResults = ALL_STORE_ENTRIES.map(mkRecord);
+  renderTable();
+
+  const total = DISTRICTS.length + ALL_STORE_ENTRIES.length;
+  let done = 0;
+  const tick = () => {
+    done++;
+    const pct=Math.round((done/total)*100);
+    document.getElementById('progress-fill').style.width=pct+'%';
+    document.getElementById('progress-label').textContent=`${done} of ${total} locations loaded…`;
+    document.getElementById('status').textContent=`Loading… ${done} of ${total} done.`;
+  };
+
+  await Promise.allSettled([
+    ...DISTRICTS.map((d,i)  => fetchRecord(d,i,districtResults,start26,end26,start25,end25).then(tick)),
+    ...ALL_STORE_ENTRIES.map((s,i) => fetchRecord(s,i,storeResults, start26,end26,start25,end25).then(tick)),
+  ]);
+
+  document.getElementById('progress-fill').style.width='100%';
+  document.getElementById('progress-label').textContent=`All ${total} locations loaded.`;
+
+  const errors=[...districtResults,...storeResults].filter(r=>r.err26||r.err25);
+  if(errors.length){
+    const box=document.getElementById('error-box');
+    box.style.display='block';
+    box.innerHTML=`<strong>${errors.length} location(s) had errors:</strong><br>`
+      +errors.map(r=>`• ${r.name||r.store}: ${r.err26||r.err25}`).join('<br>');
+  }
+
+  document.getElementById('status').textContent=`Last updated: ${new Date().toLocaleString()}  ·  Open-Meteo (commercial)`;
+  document.getElementById('export-btn').disabled=false;
+  btn.textContent='Run forecast pull'; btn.disabled=false;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportXLSX(){
+  const {start26,end26,start25,end25}=getDateRange();
+  const wb=XLSX.utils.book_new();
+
+  // District summary
+  const dh=['District','Location',
+    `Avg Temp °F (${start26}–${end26})`,`Rainfall in`,`Avg Sun hrs`,`Avg Cloud %`,
+    `Avg Temp °F (${start25}–${end25})`,`Rainfall in`,`Avg Sun hrs`,`Avg Cloud %`,
+    'Temp Δ','Rain Δ','Sun Δ','Cloud Δ','Condition'];
+  const dr=[dh];
+  [...districtResults].sort((a,b)=>a.district-b.district).forEach(r=>dr.push([
+    r.district,r.name,
+    r.temp26!=null?+r.temp26.toFixed(2):'', r.rain26!=null?+r.rain26.toFixed(2):'', r.sun26!=null?+r.sun26.toFixed(2):'', r.cloud26!=null?+r.cloud26.toFixed(1):'',
+    r.temp25!=null?+r.temp25.toFixed(2):'', r.rain25!=null?+r.rain25.toFixed(2):'', r.sun25!=null?+r.sun25.toFixed(2):'', r.cloud25!=null?+r.cloud25.toFixed(1):'',
+    (r.temp26!=null&&r.temp25!=null)?+(r.temp26-r.temp25).toFixed(2):'',
+    (r.rain26!=null&&r.rain25!=null)?+(r.rain26-r.rain25).toFixed(2):'',
+    (r.sun26!=null&&r.sun25!=null)?+(r.sun26-r.sun25).toFixed(2):'',
+    (r.cloud26!=null&&r.cloud25!=null)?+(r.cloud26-r.cloud25).toFixed(1):'',
+    r.temp26!=null?condLabel(r.temp26):'']));
+  const ws1=XLSX.utils.aoa_to_sheet(dr);
+  ws1['!cols']=[8,22,20,12,14,12,20,12,14,12,10,10,10,10,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws1,'District Summary');
+
+  // D38 store summary
+  const sh=['Store','Address',
+    `Avg Temp °F (${start26}–${end26})`,`Rainfall in`,`Avg Sun hrs`,`Avg Cloud %`,
+    `Avg Temp °F (${start25}–${end25})`,`Rainfall in`,`Avg Sun hrs`,`Avg Cloud %`,
+    'Temp Δ','Rain Δ','Sun Δ','Cloud Δ','Condition'];
+  const sr=[sh];
+  storeResults.forEach(s=>sr.push([
+    s.store,s.address,
+    s.temp26!=null?+s.temp26.toFixed(2):'', s.rain26!=null?+s.rain26.toFixed(2):'', s.sun26!=null?+s.sun26.toFixed(2):'', s.cloud26!=null?+s.cloud26.toFixed(1):'',
+    s.temp25!=null?+s.temp25.toFixed(2):'', s.rain25!=null?+s.rain25.toFixed(2):'', s.sun25!=null?+s.sun25.toFixed(2):'', s.cloud25!=null?+s.cloud25.toFixed(1):'',
+    (s.temp26!=null&&s.temp25!=null)?+(s.temp26-s.temp25).toFixed(2):'',
+    (s.rain26!=null&&s.rain25!=null)?+(s.rain26-s.rain25).toFixed(2):'',
+    (s.sun26!=null&&s.sun25!=null)?+(s.sun26-s.sun25).toFixed(2):'',
+    (s.cloud26!=null&&s.cloud25!=null)?+(s.cloud26-s.cloud25).toFixed(1):'',
+    s.temp26!=null?condLabel(s.temp26):'']));
+  const ws2=XLSX.utils.aoa_to_sheet(sr);
+  ws2['!cols']=[12,34,20,12,14,12,20,12,14,12,10,10,10,10,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws2,'Store Summary (All Districts)');
+
+  // D38 daily by store
+  const ddh=['Store','Address','Date',
+    'High °F (2026)','Low °F (2026)','Rain in (2026)','Sun hrs (2026)','Cloud % (2026)',
+    'High °F (2025)','Low °F (2025)','Rain in (2025)','Sun hrs (2025)','Cloud % (2025)',
+    'Temp Δ','Rain Δ','Sun Δ','Cloud Δ'];
+  const ddr=[ddh];
+  distStores.forEach(s=>{
+    const len=Math.max(s.days26?.length||0,s.days25?.length||0);
+    for(let i=0;i<len;i++){
+      const d6=s.days26?.[i], d5=s.days25?.[i];
+      ddr.push([s.store,s.address, d6?.date||d5?.date||'',
+        d6?+d6.tHigh.toFixed(1):'', d6?+d6.tLow.toFixed(1):'', d6?+d6.rain.toFixed(2):'', d6?.sun!=null?+d6.sun.toFixed(2):'', d6?.cloud!=null?+d6.cloud.toFixed(1):'',
+        d5?+d5.tHigh.toFixed(1):'', d5?+d5.tLow.toFixed(1):'', d5?+d5.rain.toFixed(2):'', d5?.sun!=null?+d5.sun.toFixed(2):'', d5?.cloud!=null?+d5.cloud.toFixed(1):'',
+        (d6&&d5)?+(d6.tAvg-d5.tAvg).toFixed(2):'',
+        (d6&&d5)?+(d6.rain-d5.rain).toFixed(2):'',
+        (d6?.sun!=null&&d5?.sun!=null)?+(d6.sun-d5.sun).toFixed(2):'',
+        (d6?.cloud!=null&&d5?.cloud!=null)?+(d6.cloud-d5.cloud).toFixed(1):'']);
+    }
+  });
+  const ws3=XLSX.utils.aoa_to_sheet(ddr);
+  ws3['!cols']=[12,34,12,12,12,12,12,10,12,12,12,12,10,10,10,10,10].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws3,'Daily by Store (All Districts)');
+
+  XLSX.writeFile(wb,`Weather_Pull_${fmtDate(new Date())}.xlsx`);
+}
+
+renderTable();
+
+// ── Auto-load from pre-fetched weather.json on page open ──────────────────
+async function autoLoad() {
+  try {
+    const resp = await fetch('weather.json?t=' + Date.now());
+    if (!resp.ok) throw new Error('weather.json not found');
+    const json = await resp.json();
+
+    const { start26, end26, start25, end25 } = json.dateRange;
+    document.getElementById('date-range').textContent =
+      `Forecast ${start26} → ${end26}   vs.   same period 2025 (${start25} → ${end25})  ·  Auto-updated daily at 5am ET`;
+
+    // Populate districtResults
+    districtResults = json.districts.map(d => ({
+      district: d.district, name: d.name, lat: d.lat, lon: d.lon,
+      temp26: d.temp26, rain26: d.rain26, sun26: d.sun26, cloud26: d.cloud26, days26: d.days26,
+      temp25: d.temp25, rain25: d.rain25, sun25: d.sun25, cloud25: d.cloud25, days25: d.days25,
+      loaded26: d.temp26 !== null, loaded25: d.temp25 !== null,
+      err26: d.temp26 === null ? 'No data' : null,
+      err25: d.temp25 === null ? 'No data' : null,
+      pending: false,
+    }));
+
+    // Populate storeResults
+    storeResults = ALL_STORE_ENTRIES.map(entry => {
+      const distStores = json.stores[entry.districtNum] ?? [];
+      const match = distStores.find(s => s.store === entry.store);
+      if (!match) return { ...entry, loaded26: false, loaded25: false, err26: 'No data', err25: 'No data', pending: false };
+      return {
+        ...entry,
+        temp26: match.temp26, rain26: match.rain26, sun26: match.sun26, cloud26: match.cloud26, days26: match.days26,
+        temp25: match.temp25, rain25: match.rain25, sun25: match.sun25, cloud25: match.cloud25, days25: match.days25,
+        loaded26: match.temp26 !== null, loaded25: match.temp25 !== null,
+        err26: match.temp26 === null ? 'No data' : null,
+        err25: match.temp25 === null ? 'No data' : null,
+        pending: false,
+      };
+    });
+
+    const updated = new Date(json.lastUpdated).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+    });
+    document.getElementById('status').textContent = `Data from: ${updated}  ·  Updates automatically every day at 5am ET`;
+    document.getElementById('export-btn').disabled = false;
+    renderTable();
+
+  } catch(e) {
+    // No cached data yet — show the manual refresh button
+    document.getElementById('date-range').textContent = '7-day forecast vs. same period in 2025 · Temperature · Rainfall · Sunlight · Cloud Cover';
+    document.getElementById('status').textContent = 'No cached data yet — click "Refresh data" to load live data.';
+  }
+}
+
+autoLoad();
+</script>
+</body>
+</html>
