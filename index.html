@@ -1,1119 +1,536 @@
-// fetch-weather.js — auto-generated, runs daily via GitHub Actions
-const fs = require('fs');
-const API_KEY = 'VzzMRqauyjq0RBu0';
-const DELAY_MS = 350;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>District Weather Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f4; color: #1c1c1a; min-height: 100vh; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 1.5rem; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 1.25rem; }
 
+  /* Summary cards */
+  .cards { display: grid; grid-template-columns: repeat(6,1fr); gap: 9px; margin-bottom: 1.25rem; }
+  .card { background:#fff; border-radius:9px; border:0.5px solid #e5e5e3; padding:11px 13px; }
+  .card-label { font-size:11px; color:#888; margin-bottom:3px; }
+  .card-value { font-size:18px; font-weight:500; }
+  .card-sub   { font-size:11px; color:#aaa; margin-top:2px; }
+
+  /* Toolbar */
+  .toolbar { display:flex; align-items:center; gap:9px; margin-bottom:0.75rem; flex-wrap:wrap; }
+  select { font-size:13px; padding:6px 10px; border-radius:7px; border:0.5px solid #ccc; background:#fff; color:#1c1c1a; }
+  .btn { font-size:13px; padding:6px 13px; border-radius:7px; border:0.5px solid #ccc; background:#fff; cursor:pointer; transition:background 0.15s; }
+  .btn:hover { background:#f0f0ef; }
+  .btn-primary { background:#1c1c1a; color:#fff; border-color:#1c1c1a; }
+  .btn-primary:hover { background:#333; }
+  .btn-primary:disabled { background:#999; border-color:#999; cursor:not-allowed; }
+  .btn-export { margin-left:auto; }
+
+  .status { font-size:12px; color:#888; padding:0 0 0.5rem; min-height:18px; }
+  .hint { font-size:11px; color:#aaa; margin-bottom:0.6rem; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:0.5rem; font-size:11px; color:#888; align-items:center; }
+  .dot { width:10px; height:10px; border-radius:2px; display:inline-block; margin-right:4px; }
+
+  /* Tables */
+  .table-wrap { background:#fff; border-radius:10px; border:0.5px solid #e5e5e3; overflow:hidden; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; min-width:1100px; }
+  th { font-size:10.5px; font-weight:500; color:#888; text-align:left; padding:8px 10px; border-bottom:0.5px solid #e5e5e3; background:#fafafa; white-space:nowrap; }
+  th.g-now  { background:#f0f7ff; color:#185fa5; }
+  th.g-hist { background:#f5f0fa; color:#6b3faa; }
+  th.g-diff { background:#f0faf5; color:#1a7a4a; }
+
+  /* Territory rows */
+  tr.territory-row { cursor:pointer; background:#1c1c1a; }
+  tr.territory-row td { padding:10px 11px; color:#fff; font-weight:500; font-size:13px; border-bottom:2px solid #333; }
+  tr.territory-row:hover td { background:#333; }
+  tr.territory-row.expanded td { background:#2d2d2b; }
+  .t-arrow { display:inline-block; font-size:10px; margin-right:7px; transition:transform 0.2s; }
+  .expanded .t-arrow { transform:rotate(90deg); }
+
+  /* District rows */
+  tr.district-row { cursor:pointer; display:none; }
+  tr.district-row.visible { display:table-row; }
+  tr.district-row td { padding:9px 10px; border-bottom:0.5px solid #f0f0ef; vertical-align:middle; background:#fafafa; transition:background 0.1s; }
+  tr.district-row:hover td { background:#f0f7ff; }
+  tr.district-row.expanded td { background:#e8f2fe; border-bottom:none; }
+  .d-arrow { display:inline-block; font-size:10px; color:#aaa; margin-right:5px; transition:transform 0.2s; }
+  tr.district-row.expanded .d-arrow { transform:rotate(90deg); }
+  .d-indent { padding-left:28px !important; }
+
+  /* Store expand rows */
+  tr.store-expand { display:none; }
+  tr.store-expand.visible { display:table-row; }
+  tr.store-expand td { padding:0; border-bottom:none; }
+
+  /* Store panel */
+  .store-panel { background:#fffdf0; border-bottom:2px solid #e0a800; }
+  .store-header { display:flex; align-items:center; gap:10px; padding:8px 12px 5px; border-bottom:0.5px solid #f5e8a0; }
+  .store-header span { font-size:12px; font-weight:500; color:#854F0B; }
+  .store-header small { font-size:11px; color:#aaa; }
+  table.store-tbl { min-width:1100px; }
+  table.store-tbl th { font-size:10px; padding:6px 10px; background:#fef9e0; color:#854F0B; border-bottom:0.5px solid #f5e8a0; }
+  table.store-tbl th.sg-hist { background:#f5f0fa; color:#6b3faa; }
+  table.store-tbl th.sg-diff { background:#e8f7ef; color:#1a7a4a; }
+  table.store-tbl td { padding:7px 10px; border-bottom:0.5px solid #fef3c0; font-size:11.5px; }
+  table.store-tbl tr:last-child td { border-bottom:none; }
+  table.store-tbl tr.district-row:hover td { background:#fefae8; }
+  table.store-tbl tr.district-row.expanded td { background:#fef3c0; border-bottom:none; }
+
+  /* Store daily expand */
+  tr.store-daily-group { display:none; }
+  tr.store-daily-group.visible { display:table-row; }
+  tr.store-daily-group td { padding:0; }
+  .store-daily-inner table { min-width:1100px; }
+  .store-daily-inner th { font-size:10px; padding:5px 10px; background:#fef3c0; color:#854F0B; border-bottom:0.5px solid #f5e8a0; }
+  .store-daily-inner th.sdg-hist { background:#f0eafa; color:#6b3faa; }
+  .store-daily-inner th.sdg-diff { background:#e8f7ef; color:#1a7a4a; }
+  .store-daily-inner td { padding:5px 10px; border-bottom:0.5px solid #fef3c0; font-size:11px; background:#fffbea; }
+  .store-daily-inner tr:last-child td { border-bottom:none; }
+  .store-daily-inner tr:hover td { background:#fef9e0; }
+
+  /* Daily breakdown rows */
+  tr.daily-expand { display:none; }
+  tr.daily-expand.visible { display:table-row; }
+  tr.daily-expand td { padding:0; border-bottom:none; }
+  .daily-wrap { background:#f7fbff; border-bottom:2px solid #c8dff8; }
+  table.daily-tbl { min-width:1100px; }
+  table.daily-tbl th { font-size:10px; padding:5px 10px; background:#e8f2fe; color:#185fa5; border-bottom:0.5px solid #c8dff8; }
+  table.daily-tbl th.dg-hist { background:#f0eafa; color:#6b3faa; }
+  table.daily-tbl th.dg-diff { background:#e8f7ef; color:#1a7a4a; }
+  table.daily-tbl td { padding:6px 10px; border-bottom:0.5px solid #e8f2fe; font-size:11.5px; }
+  table.daily-tbl tr:last-child td { border-bottom:none; }
+  table.daily-tbl tr:hover td { background:#edf4ff; }
+
+  /* Badges */
+  .badge { display:inline-block; padding:2px 7px; border-radius:5px; font-size:11.5px; font-weight:500; }
+  .hot  { background:#FAECE7; color:#993C1D; }
+  .warm { background:#FAEEDA; color:#854F0B; }
+  .cool { background:#E6F1FB; color:#185FA5; }
+  .cold { background:#EAF3DE; color:#3B6D11; }
+  .sun-wrap { display:flex; align-items:center; gap:5px; }
+  .sun-bar  { height:5px; border-radius:3px; background:#f5c518; min-width:2px; flex-shrink:0; }
+  .cloud-wrap { display:flex; align-items:center; gap:5px; }
+  .cloud-bar-bg { width:40px; height:5px; border-radius:3px; background:#e8e8e8; flex-shrink:0; overflow:hidden; }
+  .cloud-bar-fill { height:5px; border-radius:3px; background:#94a3b8; }
+  .delta-pos { color:#c0392b; font-weight:500; font-size:11.5px; }
+  .delta-neg { color:#185fa5; font-weight:500; font-size:11.5px; }
+  .delta-neu { color:#888; font-size:11.5px; }
+  .spin { display:inline-block; width:11px; height:11px; border:2px solid #ddd; border-top-color:#888; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .err-cell { color:#c0392b; font-size:11px; }
+  .footer { margin-top:1.25rem; font-size:11px; color:#aaa; line-height:1.8; }
+  @media(max-width:900px){ .cards { grid-template-columns:repeat(3,1fr); } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>District Weather Dashboard</h1>
+  <p class="subtitle" id="date-range">Loading weather data…</p>
+
+  <div class="cards">
+    <div class="card"><div class="card-label">Overall avg temp (2026)</div><div class="card-value" id="s-temp-now">—</div><div class="card-sub" id="s-temp-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Avg daily sunlight</div><div class="card-value" id="s-sun-now">—</div><div class="card-sub" id="s-sun-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Avg cloud cover</div><div class="card-value" id="s-cloud-now">—</div><div class="card-sub" id="s-cloud-hist">2025: —</div></div>
+    <div class="card"><div class="card-label">Warmest district</div><div class="card-value" id="s-hot">—</div><div class="card-sub" id="s-hot-sub">&nbsp;</div></div>
+    <div class="card"><div class="card-label">Most rainfall</div><div class="card-value" id="s-rain">—</div><div class="card-sub" id="s-rain-sub">&nbsp;</div></div>
+    <div class="card"><div class="card-label">Avg temp Δ vs 2025</div><div class="card-value" id="s-delta">—</div><div class="card-sub" id="s-delta-sub">&nbsp;</div></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-primary" id="run-btn" onclick="manualRefresh()">Refresh data</button>
+    <button class="btn" onclick="expandAll()">Expand all</button>
+    <button class="btn" onclick="collapseAll()">Collapse all</button>
+    <button class="btn btn-export" id="export-btn" onclick="exportXLSX()" disabled>Export .xlsx</button>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#E6F1FB"></span>This year (2026)</span>
+    <span><span class="dot" style="background:#f5f0fa"></span>Same week 2025</span>
+    <span><span class="dot" style="background:#f0faf5"></span>Year-over-year Δ</span>
+    <span style="color:#c0392b;font-weight:500">▲ Higher than 2025</span>
+    <span style="color:#185fa5;font-weight:500">▼ Lower than 2025</span>
+    <span><span style="display:inline-block;width:16px;height:5px;background:#f5c518;border-radius:3px;margin-right:4px;vertical-align:middle"></span>Sunlight</span>
+    <span><span style="display:inline-block;width:16px;height:5px;background:#94a3b8;border-radius:3px;margin-right:4px;vertical-align:middle"></span>Cloud %</span>
+  </div>
+  <div class="hint">▶ Click a territory to expand districts · Click a district to see stores · Click a store for daily breakdown</div>
+
+  <div class="status" id="status">Loading…</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="width:22px"></th>
+          <th rowspan="2">Location</th>
+          <th class="g-now" colspan="4">This week (2026)</th>
+          <th class="g-hist" colspan="4">Same week 2025</th>
+          <th class="g-diff" colspan="4">Year-over-year Δ</th>
+        </tr>
+        <tr>
+          <th class="g-now">Avg Temp</th><th class="g-now">Rainfall</th><th class="g-now">Avg Sunlight</th><th class="g-now">Avg Cloud</th>
+          <th class="g-hist">Avg Temp</th><th class="g-hist">Rainfall</th><th class="g-hist">Avg Sunlight</th><th class="g-hist">Avg Cloud</th>
+          <th class="g-diff">Temp Δ</th><th class="g-diff">Rain Δ</th><th class="g-diff">Sun Δ</th><th class="g-diff">Cloud Δ</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <strong>Data sources</strong><br>
+    • Current forecast &amp; 2025 historical: <a href="https://open-meteo.com" target="_blank" style="color:#185fa5">Open-Meteo</a> (commercial plan)<br>
+    • Data auto-updates every morning · Last refresh shown in status bar above
+  </div>
+</div>
+
+<script>
+// ── Territory / District structure ────────────────────────────────────────
 const TERRITORY_STRUCTURE = {
-  1: [2, 3, 5, 6, 8, 11, 14, 15, 16, 17, 18, 19, 60],
-  2: [20, 21, 22, 24, 25, 26, 27, 29, 31, 32, 52, 53, 54, 56, 58],
-  3: [28, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 49, 51],
+  1: [2,3,5,6,8,11,14,15,16,17,18,19,60],        // 277 stores
+  2: [20,21,22,24,25,26,27,29,31,32,52,53,54,56,58], // 307 stores
+  3: [28,33,34,36,37,38,39,40,41,42,43,44,46,47,49,51], // 307 stores
 };
 
-const DISTRICT_CENTERS = {
-  2: { territory:1, lat:37.9127, lon:-121.6969 },
-  3: { territory:1, lat:38.8282, lon:-121.3754 },
-  5: { territory:1, lat:36.6274, lon:-120.353 },
-  6: { territory:1, lat:34.2181, lon:-118.4484 },
-  8: { territory:1, lat:34.0713, lon:-117.3804 },
-  11: { territory:1, lat:33.76, lon:-117.6658 },
-  14: { territory:1, lat:32.5504, lon:-113.8463 },
-  15: { territory:1, lat:35.2884, lon:-112.3366 },
-  16: { territory:1, lat:33.3482, lon:-111.6861 },
-  17: { territory:1, lat:33.549, lon:-112.2256 },
-  18: { territory:1, lat:33.6786, lon:-112.101 },
-  19: { territory:1, lat:33.3709, lon:-111.9121 },
-  20: { territory:2, lat:28.7233, lon:-98.4835 },
-  21: { territory:2, lat:30.0351, lon:-95.6628 },
-  22: { territory:2, lat:30.1407, lon:-95.0719 },
-  24: { territory:2, lat:29.6997, lon:-95.6742 },
-  25: { territory:2, lat:29.3487, lon:-95.5266 },
-  26: { territory:2, lat:30.3618, lon:-97.7816 },
-  27: { territory:2, lat:32.9466, lon:-96.3446 },
-  28: { territory:3, lat:39.1539, lon:-95.3563 },
-  29: { territory:2, lat:33.1493, lon:-96.8044 },
-  31: { territory:2, lat:33.0275, lon:-98.3008 },
-  32: { territory:2, lat:32.522, lon:-97.4538 },
-  33: { territory:3, lat:36.3523, lon:-90.6484 },
-  34: { territory:3, lat:35.6383, lon:-97.0819 },
-  36: { territory:3, lat:34.2455, lon:-84.1378 },
-  37: { territory:3, lat:33.2813, lon:-84.7406 },
-  38: { territory:3, lat:41.2333, lon:-87.1926 },
-  39: { territory:3, lat:41.9862, lon:-81.9222 },
-  40: { territory:3, lat:34.4498, lon:-81.3769 },
-  41: { territory:3, lat:36.2912, lon:-77.637 },
-  42: { territory:3, lat:37.9647, lon:-85.5511 },
-  43: { territory:3, lat:42.0022, lon:-71.9396 },
-  44: { territory:3, lat:39.4398, lon:-76.5856 },
-  46: { territory:3, lat:40.7853, lon:-73.3178 },
-  47: { territory:3, lat:40.3325, lon:-75.4462 },
-  49: { territory:3, lat:40.0898, lon:-74.5547 },
-  51: { territory:3, lat:41.0763, lon:-73.9913 },
-  52: { territory:2, lat:29.735, lon:-82.5957 },
-  53: { territory:2, lat:27.2939, lon:-82.3443 },
-  54: { territory:2, lat:28.22, lon:-81.9603 },
-  56: { territory:2, lat:30.6591, lon:-90.545 },
-  58: { territory:2, lat:26.8841, lon:-80.3144 },
-  60: { territory:1, lat:36.4891, lon:-114.5616 },
-};
+// ── State ─────────────────────────────────────────────────────────────────
+// weatherData[territory][district] = { district data + stores array }
+let weatherData = {};
+let expandedTerritories = new Set();
+let expandedDistricts   = new Set();
+let expandedStores      = new Set();
 
-const STORE_DISTRICTS = {
-  2: [
-    { store:'MODESTO, CA #52', address:'1221 E ORANGEBURG AVE STE 3, MODESTO, CA 95350', lat:37.66363, lon:-120.9771 },
-    { store:'STOCKTON, CA #62', address:'6277 PACIFIC AVE, STOCKTON, CA 95207', lat:38.00682, lon:-121.31906 },
-    { store:'SANTA ROSA, CA #73', address:'2460 MENDOCINO AVE, SANTA ROSA, CA 95403', lat:38.4646, lon:-122.71904 },
-    { store:'PLEASANT HILL, CA #137', address:'25 VIVIAN DR, PLEASANT HILL, CA 94523', lat:37.95163, lon:-122.06127 },
-    { store:'PITTSBURG, CA #152', address:'4517 CENTURY BLVD, PITTSBURG, CA 94565', lat:38.00634, lon:-121.83714 },
-    { store:'NOVATO, CA #189', address:'220 VINTAGE WAY, NOVATO, CA 94945', lat:38.08912, lon:-122.55482 },
-    { store:'CONCORD, CA #208', address:'5100 CLAYTON RD STE A21, CONCORD, CA 94521', lat:37.95536, lon:-121.96691 },
-    { store:'WALNUT CREEK, CA #242', address:'2246 OAK GROVE RD, WALNUT CREEK, CA 94598', lat:37.9306, lon:-122.01603 },
-    { store:'DANVILLE, CA #251', address:'494 SAN RAMON VALLEY BLVD, DANVILLE, CA 94526', lat:37.81864, lon:-121.99654 },
-    { store:'MERCED, CA #338', address:'1124 W OLIVE AVE STE 103, MERCED, CA 95348', lat:37.31907, lon:-120.48736 },
-    { store:'NORTH MODESTO, CA #340', address:'2100 STANDIFORD AVE STE G6, MODESTO, CA 95350', lat:37.6896, lon:-121.03316 },
-    { store:'LAFAYETTE, CA #354', address:'3389 MT DIABLO BLVD, LAFAYETTE, CA 94549', lat:37.89413, lon:-122.10823 },
-    { store:'TURLOCK, CA #398', address:'3081 GEER RD, TURLOCK, CA 95382', lat:37.52062, lon:-120.84905 },
-    { store:'MANTECA, CA #403', address:'1166 S MAIN ST, MANTECA, CA 95337', lat:37.78647, lon:-121.21577 },
-    { store:'TRACY, CA #458', address:'1851 W 11TH ST, TRACY, CA 95376', lat:37.73948, lon:-121.4512 },
-    { store:'ANTIOCH-BRENTWOOD, CA #501', address:'5859 LONE TREE WAY STE B, ANTIOCH, CA 94531', lat:37.9618, lon:-121.73561 },
-    { store:'LODI, CA #544', address:'858 W KETTLEMAN LN STE 15, LODI, CA 95240', lat:38.11536, lon:-121.28364 },
-    { store:'NAPA, CA #731', address:'705 LINCOLN AVE, NAPA, CA 94558', lat:38.30981, lon:-122.2874 },
-    { store:'SAN RAMON, CA #776', address:'3211 CROW CANYON PL STE L, SAN RAMON, CA 94583', lat:37.77587, lon:-121.97221 },
-    { store:'FAIRFIELD, CA #777', address:'1200 OLIVER RD STE 105, FAIRFIELD, CA 94534', lat:38.25498, lon:-122.06709 },
-  ],
-  3: [
-    { store:'CITRUS HEIGHTS, CA #71', address:'7656 GREENBACK LN, CITRUS HEIGHTS, CA 95610', lat:38.67814, lon:-121.28276 },
-    { store:'VACAVILLE, CA #83', address:'1061 HELEN POWER DR STE B200, VACAVILLE, CA 95687', lat:38.36446, lon:-121.96045 },
-    { store:'REDDING, CA #123', address:'535 E CYPRESS AVE, REDDING, CA 96002', lat:40.57097, lon:-122.36166 },
-    { store:'SACRAMENTO, CA #139', address:'4391 ARDEN WAY, SACRAMENTO, CA 95864', lat:38.59562, lon:-121.36253 },
-    { store:'FAIR OAKS/ORANGEVALE, CA #236', address:'5225 HAZEL AVE, FAIR OAKS, CA 95628', lat:38.66135, lon:-121.22576 },
-    { store:'THE POCKET, CA #268', address:'7215 GREENHAVEN DR STE B, SACRAMENTO, CA 95831', lat:38.49421, lon:-121.52386 },
-    { store:'NEW ROSEVILLE, CA #270', address:'1921 DOUGLAS BLVD STE 101, ROSEVILLE, CA 95661', lat:38.74571, lon:-121.25524 },
-    { store:'CARMICHAEL-2, CA #313', address:'4005 MANZANITA AVE STE 51, CARMICHAEL, CA 95608', lat:38.63726, lon:-121.32817 },
-    { store:'LAGUNA/ELK GROVE, CA #321', address:'7717 LAGUNA BLVD STE 320, ELK GROVE, CA 95758', lat:38.42328, lon:-121.41264 },
-    { store:'FOLSOM, CA #368', address:'431 BLUE RAVINE RD, FOLSOM, CA 95630', lat:38.67044, lon:-121.15236 },
-    { store:'CHICO, CA #448', address:'2015 FOREST AVE STE 30, CHICO, CA 95928', lat:39.72643, lon:-121.80142 },
-    { store:'ANTELOPE, CA #532', address:'7893 WALERGA RD STE 100, ANTELOPE, CA 95843', lat:38.71076, lon:-121.36426 },
-    { store:'NW ROSEVILLE, CA #550', address:'6726 STANFORD RANCH RD STE 9, ROSEVILLE, CA 95678', lat:38.7818, lon:-121.26579 },
-    { store:'YUBA CITY, CA #623', address:'1352 COLUSA HWY STE A, YUBA CITY, CA 95993', lat:39.14173, lon:-121.63643 },
-    { store:'EL DORADO HILLS, CA #630', address:'2203 FRANCISCO DR STE 110, EL DORADO HILLS, CA 95762', lat:38.7111, lon:-121.08561 },
-    { store:'RENO, NV #693', address:'4902 S VIRGINIA ST STE D11, RENO, NV 89502', lat:39.48162, lon:-119.79129 },
-    { store:'DAVIS, CA #780', address:'1321 W COVELL BLVD STE 119A, DAVIS, CA 95616', lat:38.56099, lon:-121.76474 },
-    { store:'AUBURN, CA #898', address:'2184 GRASS VALLEY HWY, AUBURN, CA 95603', lat:38.9337, lon:-121.09125 },
-    { store:'All Clear Water Maint. #1364', address:'9156 ELK GROVE FLORIN RD, ELK GROVE, CA 95624', lat:38.42533, lon:-121.37209 },
-    { store:'Elk Grove #1365', address:'9156 ELK GROVE FLORIN RD, ELK GROVE, CA 95624', lat:38.42533, lon:-121.37209 },
-    { store:'SACRAMENTO, CA CSC #3010', address:'4641 PELL DR STE 16, SACRAMENTO, CA 95838', lat:38.65295, lon:-121.47197 },
-  ],
-  5: [
-    { store:'BLACKSTONE, CA #13', address:'6689 N BLACKSTONE AVE, FRESNO, CA 93710', lat:36.83438, lon:-119.79045 },
-    { store:'SAN JOSE, CA #15', address:'1424 S DE ANZA BLVD, SAN JOSE, CA 95129', lat:37.29771, lon:-122.0321 },
-    { store:'FREMONT, CA #66', address:'35700 FREMONT BLVD, FREMONT, CA 94536', lat:37.56702, lon:-122.02432 },
-    { store:'LOS ALTOS, CA #85', address:'1945 W EL CAMINO REAL, MOUNTAIN VIEW, CA 94040', lat:37.39335, lon:-122.09705 },
-    { store:'BLOSSOM HILL, CA #88', address:'950 BLOSSOM HILL RD, SAN JOSE, CA 95123', lat:37.25025, lon:-121.86291 },
-    { store:'VISALIA, CA #125', address:'3906 S MOONEY BLVD, VISALIA, CA 93277', lat:36.29429, lon:-119.31349 },
-    { store:'SAN CARLOS, CA #146', address:'770 EL CAMINO REAL, SAN CARLOS, CA 94070', lat:37.50504, lon:-122.25817 },
-    { store:'CLOVIS, CA #166', address:'490 SHAW AVE, CLOVIS, CA 93612', lat:36.80836, lon:-119.70325 },
-    { store:'LIVERMORE, CA #179', address:'1002 E STANLEY BLVD, LIVERMORE, CA 94550', lat:37.67886, lon:-121.78326 },
-    { store:'SW BAKERSFIELD, CA #249', address:'8200 STOCKDALE HWY STE D3, BAKERSFIELD, CA 93311', lat:35.35452, lon:-119.09547 },
-    { store:'NE BAKERSFIELD, CA #261', address:'2651 OSWELL ST STE F, BAKERSFIELD, CA 93306', lat:35.39362, lon:-118.94962 },
-    { store:'FRESNO, CA #310', address:'3249 W SHAW AVE STE 101, FRESNO, CA 93711', lat:36.80812, lon:-119.85077 },
-    { store:'SOUTH BAKERSFIELD, CA #371', address:'3360 STINE RD, BAKERSFIELD, CA 93309', lat:35.32442, lon:-119.05652 },
-    { store:'HANFORD, CA #373', address:'530 N 11TH AVE, HANFORD, CA 93230', lat:36.32955, lon:-119.6553 },
-    { store:'CAMPBELL, CA #402', address:'1355 S BASCOM AVE, SAN JOSE, CA 95128', lat:37.29993, lon:-121.93175 },
-    { store:'NORTH FRESNO, CA #476', address:'8947 N CHESTNUT AVE, FRESNO, CA 93720', lat:36.86607, lon:-119.73891 },
-    { store:'GILROY, CA #505', address:'6915 CAMINO ARROYO STE 10, GILROY, CA 95020', lat:37.00252, lon:-121.55093 },
-    { store:'NW BAKERSFIELD, CA #570', address:'9901 HAGEMAN RD STE 500, BAKERSFIELD, CA 93312', lat:35.39793, lon:-119.11191 },
-    { store:'SOUTH FRESNO, CA #600', address:'550 S CLOVIS AVE STE 106, FRESNO, CA 93727', lat:36.73724, lon:-119.70119 },
-    { store:'TULARE, CA #633', address:'1308 E PROSPERITY AVE STE 1308, TULARE, CA 93274', lat:36.22607, lon:-119.32674 },
-    { store:'PLEASANTON, CA #827', address:'4001 SANTA RITA RD STE 1, PLEASANTON, CA 94588', lat:37.69725, lon:-121.87451 },
-    { store:'MADERA, CA #836', address:'2140 W CLEVELAND AVE STE 112, MADERA, CA 93637', lat:36.97447, lon:-120.08281 },
-    { store:'PORTERVILLE, CA #837', address:'1383 W HENDERSON AVE, PORTERVILLE, CA 93257', lat:36.08032, lon:-119.04814 },
-    { store:'LOS BANOS, CA #883', address:'2160 E PACHECO BLVD STE O&P, LOS BANOS, CA 93635', lat:37.05715, lon:-120.82098 },
-    { store:'WEST BAKERSFIELD, CA #913', address:'13075 ROSEDALE HWY STE E, BAKERSFIELD, CA 93314', lat:35.38339, lon:-119.1473 },
-    { store:'PASO ROBLES, CA #964', address:'2421 GOLDEN HILL RD STE 104-105, PASO ROBLES, CA 93446', lat:35.64565, lon:-120.65898 },
-    { store:'SELMA, CA #976', address:'2851 HIGHLAND AVE STE 103, SELMA, CA 93662', lat:36.57477, lon:-119.62885 },
-    { store:'Fresno #1514', address:'3768 N BLACKSTONE AVE, FRESNO, CA 93726', lat:36.78579, lon:-119.78928 },
-  ],
-  6: [
-    { store:'NORTH HOLLYWOOD, CA #1', address:'6353 COLDWATER CANYON AVE, NORTH HOLLYWOOD, CA 91606', lat:34.18611, lon:-118.41387 },
-    { store:'PASADENA, CA #2', address:'1920 E COLORADO BLVD, PASADENA, CA 91107', lat:34.14596, lon:-118.11084 },
-    { store:'PICO RIVERA, CA #5', address:'8434 ROSEMEAD BLVD, PICO RIVERA, CA 90660', lat:33.96234, lon:-118.10925 },
-    { store:'TARZANA, CA #9', address:'19433 VENTURA BLVD, TARZANA, CA 91356', lat:34.17283, lon:-118.55749 },
-    { store:'WHITTIER, CA #12', address:'16221 WHITTIER BLVD, WHITTIER, CA 90603', lat:33.94156, lon:-117.98482 },
-    { store:'GRANADA HILLS, CA #17', address:'17618 CHATSWORTH ST, GRANADA HILLS, CA 91344', lat:34.2648, lon:-118.51937 },
-    { store:'CHATSWORTH, CA #41', address:'20543 DEVONSHIRE ST, CHATSWORTH, CA 91311', lat:34.25732, lon:-118.58167 },
-    { store:'SAUGUS, CA #59', address:'26264 BOUQUET CANYON RD, SANTA CLARITA, CA 91350', lat:34.42149, lon:-118.5416 },
-    { store:'LA CRESCENTA, CA #64', address:'2651 FOOTHILL BLVD, LA CRESCENTA, CA 91214', lat:34.22209, lon:-118.23648 },
-    { store:'THOUSAND OAKS, CA #68', address:'1760 E THOUSAND OAKS BLVD, THOUSAND OAKS, CA 91362', lat:34.17751, lon:-118.85114 },
-    { store:'WEST HILLS, CA #93', address:'6510 PLATT AVE, WEST HILLS, CA 91307', lat:34.18961, lon:-118.64258 },
-    { store:'SIMI VALLEY, CA #128', address:'3310 E LOS ANGELES AVE, SIMI VALLEY, CA 93063', lat:34.27161, lon:-118.73266 },
-    { store:'LANCASTER, CA #129', address:'44530 VALLEY CENTRAL WAY, LANCASTER, CA 93536', lat:34.6925, lon:-118.17207 },
-    { store:'OXNARD 142', address:'1941 E VENTURA BLVD STE B, OXNARD, CA 93036', lat:34.22389, lon:-119.15134 },
-    { store:'PALMDALE 143', address:'422 W RANCHO VISTA BLVD STE C220, PALMDALE, CA 93551', lat:34.60164, lon:-118.13695 },
-    { store:'ARCADIA 206', address:'324 E HUNTINGTON DR STE B-4, ARCADIA, CA 91006', lat:34.14008, lon:-118.02313 },
-    { store:'HACIENDA HEIGHTS 221', address:'17547 COLIMA RD, ROWLAND HEIGHTS, CA 91748', lat:33.99126, lon:-117.92243 },
-    { store:'LA PUENTE 231', address:'1869 N HACIENDA BLVD, LA PUENTE, CA 91744', lat:34.05149, lon:-117.94294 },
-    { store:'SANTA BARBARA, CA #308', address:'3218 STATE ST STE B, SANTA BARBARA, CA 93105', lat:34.44043, lon:-119.734 },
-    { store:'BURBANK, CA #383', address:'2301 W VICTORY BLVD, BURBANK, CA 91506', lat:34.18462, lon:-118.33688 },
-    { store:'CAMARILLO, CA 603', address:'828 ARNEILL RD, CAMARILLO, CA 93010', lat:34.22566, lon:-119.03889 },
-    { store:'MONTEBELLO, CA #973', address:'2553 VIA CAMPO, MONTEBELLO, CA 90640', lat:34.03274, lon:-118.1235 },
-  ],
-  8: [
-    { store:'GLENDORA, CA #11', address:'219 W ARROW HWY, GLENDORA, CA 91740', lat:34.10665, lon:-117.86757 },
-    { store:'ALTA LOMA, CA #89', address:'8732 19TH ST, RANCHO CUCAMONGA, CA 91701', lat:34.13254, lon:-117.61504 },
-    { store:'ONTARIO, CA #131', address:'1520 N MOUNTAIN AVE STE 112, ONTARIO, CA 91762', lat:34.08548, lon:-117.67008 },
-    { store:'MORENO VALLEY 180', address:'23965 SUNNYMEAD BLVD STE B, MORENO VALLEY, CA 92553', lat:33.93897, lon:-117.24466 },
-    { store:'FONTANA 240', address:'16767 VALLEY BLVD STE A, FONTANA, CA 92335', lat:34.07022, lon:-117.43858 },
-    { store:'REDLANDS 243', address:'1578 BARTON RD, REDLANDS, CA 92373', lat:34.04734, lon:-117.20841 },
-    { store:'LA VERNE 267', address:'1945 FOOTHILL BLVD, LA VERNE, CA 91750', lat:34.1141, lon:-117.767 },
-    { store:'CHINO 362', address:'5250 PHILADELPHIA ST STE B B-C, CHINO, CA 91710', lat:34.03361, lon:-117.69076 },
-    { store:'VICTORVILLE 390', address:'16940 BEAR VALLEY RD, VICTORVILLE, CA 92395', lat:34.47098, lon:-117.29408 },
-    { store:'SAN BERNARDINO 413', address:'2230 E HIGHLAND AVE, SAN BERNARDINO, CA 92404', lat:34.13592, lon:-117.23852 },
-    { store:'HEMET 443', address:'1348 E FLORIDA AVE STE A12-A13, HEMET, CA 92544', lat:33.74773, lon:-116.95804 },
-    { store:'LA QUINTA, CA 468', address:'78315 HIGHWAY 111, LA QUINTA, CA 92253', lat:33.71579, lon:-116.2972 },
-    { store:'CATHEDRAL CITY, CA #555', address:'69195 RAMON RD STE C2, CATHEDRAL CITY, CA 92234', lat:33.8158, lon:-116.45635 },
-    { store:'CHINO HILLS, CA 586', address:'2549 CHINO HILLS PKWY STE E, CHINO HILLS, CA 91709', lat:33.98505, lon:-117.74818 },
-    { store:'RANCHO CUCAMONGA, CA 617', address:'12375 BASE LINE RD STE 105, RANCHO CUCAMONGA, CA 91739', lat:34.12111, lon:-117.53528 },
-    { store:'RIALTO, CA #692', address:'2002 N RIVERSIDE AVE STE A B, RIALTO, CA 92377', lat:34.13687, lon:-117.37055 },
-    { store:'YUCAIPA, CA #702', address:'33527 YUCAIPA BLVD STE C1, YUCAIPA, CA 92399', lat:34.0338, lon:-117.07279 },
-    { store:'DIAMOND BAR, CA #775', address:'222 S DIAMOND BAR BLVD, DIAMOND BAR, CA 91765', lat:34.02122, lon:-117.81004 },
-    { store:'APPLE VALLEY, CA #815', address:'20258 US HIGHWAY 18 STE 480, APPLE VALLEY, CA 92307', lat:34.52611, lon:-117.22037 },
-    { store:'HESPERIA, CA #916', address:'12765 MAIN ST STE 600, HESPERIA, CA 92345', lat:34.42655, lon:-117.3838 },
-    { store:'ANAHEIM, CA CSC #3009', address:'1618 N MISSILE WAY, ANAHEIM, CA 92801', lat:33.85877, lon:-117.91773 },
-    { store:'ONTARIO, CA CSC #3016', address:'1595 S DUPONT AVE STE D, ONTARIO, CA 91761', lat:34.04361, lon:-117.56281 },
-  ],
-  11: [
-    { store:'ANAHEIM, CA #6', address:'801 S EUCLID ST, ANAHEIM, CA 92802', lat:33.82065, lon:-117.9415 },
-    { store:'TORRANCE, CA #8', address:'23401 S WESTERN AVE, TORRANCE, CA 90501', lat:33.81284, lon:-118.30903 },
-    { store:'RIVERSIDE, CA #14', address:'3550 CENTRAL AVE, RIVERSIDE, CA 92506', lat:33.9535, lon:-117.38942 },
-    { store:'YORBA LINDA, CA #77', address:'1226 E YORBA LINDA BLVD, PLACENTIA, CA 92870', lat:33.88822, lon:-117.8402 },
-    { store:'ORANGE, CA #78', address:'3444 E CHAPMAN AVE, ORANGE, CA 92869', lat:33.78772, lon:-117.81626 },
-    { store:'MISSION VIEJO, CA #87', address:'24011 MARGUERITE PKWY STE E, MISSION VIEJO, CA 92692', lat:33.61398, lon:-117.65442 },
-    { store:'NORCO/CORONA, CA #117', address:'1080 HAMNER AVE STE A, NORCO, CA 92860', lat:33.89891, lon:-117.5629 },
-    { store:'RIVERSIDE-2, CA #130', address:'10430 MAGNOLIA AVE, RIVERSIDE, CA 92505', lat:33.91034, lon:-117.46385 },
-    { store:'FULLERTON 215', address:'1231 S HARBOR BLVD, LA HABRA, CA 90631', lat:33.9161, lon:-117.93313 },
-    { store:'TUSTIN 266', address:'1092 IRVINE BLVD, TUSTIN, CA 92780', lat:33.74822, lon:-117.81087 },
-    { store:'TEMECULA, CA #408', address:'40414 WINCHESTER RD STE B C, TEMECULA, CA 92591', lat:33.52986, lon:-117.15264 },
-    { store:'SOUTH TEMECULA, CA 594', address:'33417 TEMECULA PKWY STE 102, TEMECULA, CA 92592', lat:33.4864, lon:-117.07725 },
-    { store:'LAKE ELSINORE, CA #680', address:'257 DIAMOND DR, LAKE ELSINORE, CA 92530', lat:33.66059, lon:-117.30001 },
-    { store:'LONG BEACH, CA #707', address:'5905 E SPRING ST, LONG BEACH, CA 90808', lat:33.81144, lon:-118.11563 },
-    { store:'LAKE FOREST, CA #750', address:'23778 MERCURY RD, LAKE FOREST, CA 92630', lat:33.62489, lon:-117.71515 },
-    { store:'NORTH TORRANCE, CA #811', address:'5054 W 190TH ST, TORRANCE, CA 90503', lat:33.85819, lon:-118.36492 },
-    { store:'CORONA, CA #850', address:'351 MAGNOLIA AVE STE 105, CORONA, CA 92879', lat:33.85382, lon:-117.56571 },
-    { store:'MENIFEE, CA #856', address:'30406 HAUN RD STE 710, MENIFEE, CA 92584', lat:33.67917, lon:-117.17503 },
-    { store:'EAST RIVERSIDE, CA #863', address:'321 E ALESSANDRO BLVD STE 2D/E, RIVERSIDE, CA 92508', lat:33.91621, lon:-117.3268 },
-    { store:'COSTA MESA, CA #869', address:'2159 HARBOR BLVD, COSTA MESA, CA 92627', lat:33.65345, lon:-117.91916 },
-    { store:'HUNTINGTON BEACH, CA #937', address:'16095 GOLDENWEST ST, HUNTINGTON BEACH, CA 92647', lat:33.72941, lon:-118.00683 },
-    { store:'MURRIETA, CA #940', address:'41036 CALIFORNIA OAKS RD, MURRIETA, CA 92562', lat:33.56684, lon:-117.20612 },
-  ],
-  14: [
-    { store:'TUCSON, AZ #19', address:'4639 E SPEEDWAY BLVD, TUCSON, AZ 85712', lat:32.23636, lon:-110.89349 },
-    { store:'NORTH TUCSON, AZ #72', address:'5971 N ORACLE RD, TUCSON, AZ 85704', lat:32.31522, lon:-110.97712 },
-    { store:'ESCONDIDO, CA #98', address:'1611 S CENTRE CITY PKWY STE A, ESCONDIDO, CA 92025', lat:33.10387, lon:-117.0769 },
-    { store:'TUCSON-3, AZ #202', address:'7955 E BROADWAY BLVD STE 147, TUCSON, AZ 85710', lat:32.22113, lon:-110.8221 },
-    { store:'YUMA, AZ #293', address:'3107 S 4TH AVE STE A, YUMA, AZ 85364', lat:32.67099, lon:-114.62445 },
-    { store:'POWAY 295', address:'14721 POMERADO RD, POWAY, CA 92064', lat:32.97991, lon:-117.0622 },
-    { store:'CHULA VISTA 299', address:'316 E H ST STE 701, CHULA VISTA, CA 91910', lat:32.64127, lon:-117.05148 },
-    { store:'LA MESA 300', address:'8274 PARKWAY DR STE 101, LA MESA, CA 91942', lat:32.77784, lon:-117.01909 },
-    { store:'OCEANSIDE, CA #302', address:'3837 PLAZA DR STE 806, OCEANSIDE, CA 92056', lat:33.18247, lon:-117.29073 },
-    { store:'KEARNY MESA 314', address:'5943 BALBOA AVE STE 200, SAN DIEGO, CA 92111', lat:32.82016, lon:-117.17738 },
-    { store:'RANCHO SAN DIEGO 348', address:'2916 JAMACHA RD, EL CAJON, CA 92019', lat:32.74044, lon:-116.93972 },
-    { store:'MARANA, AZ #351', address:'7085 N THORNYDALE RD BLDG D, TUCSON, AZ 85741', lat:32.33528, lon:-111.04701 },
-    { store:'SANTEE, CA #386', address:'9720 MISSION GORGE RD STE H, SANTEE, CA 92071', lat:32.83883, lon:-116.98522 },
-    { store:'N TUCSON, AZ #435', address:'5671 N SWAN RD, TUCSON, AZ 85718', lat:32.30967, lon:-110.89274 },
-    { store:'TANQUE VERDE, AZ #508', address:'8800 E TANQUE VERDE RD, TUCSON, AZ 85749', lat:32.25795, lon:-110.80439 },
-    { store:'MIRA MESA, CA 517', address:'8967 MIRA MESA BLVD, SAN DIEGO, CA 92126', lat:32.91411, lon:-117.13232 },
-    { store:'ORO VALLEY, AZ #556', address:'10515 N ORACLE RD STE 113, TUCSON, AZ 85737', lat:32.39669, lon:-110.95913 },
-    { store:'WEST TUCSON, AZ #577', address:'2480 N SILVERBELL RD STE 120, TUCSON, AZ 85745', lat:32.25239, lon:-111.01427 },
-    { store:'SIERRA VISTA, AZ #649', address:'439 N HIGHWAY 90 BYP, SIERRA VISTA, AZ 85635', lat:31.55946, lon:-110.2572 },
-    { store:'EL CENTRO, CA #652', address:'830 N IMPERIAL AVE, EL CENTRO, CA 92243', lat:32.79971, lon:-115.5701 },
-    { store:'RAMONA, CA 653', address:'1905 MAIN ST, RAMONA, CA 92065', lat:33.03257, lon:-116.88399 },
-    { store:'SAN MARCOS, CA #706', address:'565 GRAND AVE STE D100, SAN MARCOS, CA 92078', lat:33.13553, lon:-117.1766 },
-    { store:'GREEN VALLEY, AZ #782', address:'18705 S I 19 FRONTAGE RD, GREEN VALLEY, AZ 85614', lat:31.91024, lon:-110.98515 },
-    { store:'CORTARO, AZ #840', address:'8295 N CORTARO RD STE 101, TUCSON, AZ 85743', lat:32.35722, lon:-111.09216 },
-    { store:'RITA RANCH, AZ #888', address:'9040 E VALENCIA RD STE 142, TUCSON, AZ 85747', lat:32.119, lon:-110.7994 },
-    { store:'SOUTH ORO VALLEY, AZ #968', address:'7607 N ORACLE RD STE 131, TUCSON, AZ 85704', lat:32.34489, lon:-110.97651 },
-    { store:'SAN DIEGO, CA CSC #3015', address:'6345 MARINDUSTRY DR, SAN DIEGO, CA 92121', lat:32.88004, lon:-117.17807 },
-    { store:'TUCSON, AZ CSC #3017', address:'1959 W MCMILLAN ST STE 101, TUCSON, AZ 85705', lat:32.27883, lon:-111.00833 },
-  ],
-  15: [
-    { store:'LAS VEGAS, NV #25', address:'5225 W CHARLESTON BLVD, LAS VEGAS, NV 89146', lat:36.15898, lon:-115.21123 },
-    { store:'ALBUQUERQUE, NM #36', address:'2740 WYOMING BLVD NE STE 5, ALBUQUERQUE, NM 87111', lat:35.11748, lon:-106.55019 },
-    { store:'EL PASO, TX #42', address:'1506 N LEE TREVINO DR STE G, EL PASO, TX 79936', lat:31.7527, lon:-106.3187 },
-    { store:'EL PASO WEST, TX #81', address:'7500 N MESA ST STE 319, EL PASO, TX 79912', lat:31.8384, lon:-106.56378 },
-    { store:'SPRING VALLEY, NV #112', address:'6831 W FLAMINGO RD STE 401, LAS VEGAS, NV 89103', lat:36.11438, lon:-115.24136 },
-    { store:'NW LAS VEGAS 272', address:'3250 N TENAYA WAY STE 114, LAS VEGAS, NV 89129', lat:36.21984, lon:-115.25132 },
-    { store:'ALBUQUERQUE-2, NM #361', address:'3707 ELLISON RD NW STE G, ALBUQUERQUE, NM 87114', lat:35.20757, lon:-106.65381 },
-    { store:'NORTH LAS VEGAS 375', address:'1631 W CRAIG RD STE 11 11-12, NORTH LAS VEGAS, NV 89032', lat:36.2393, lon:-115.16494 },
-    { store:'NORTH SUMMERLIN, NV 470', address:'9691 TRAILWOOD DR STE 110, LAS VEGAS, NV 89134', lat:36.19111, lon:-115.30736 },
-    { store:'SOUTH SUMMERLIN, NV 471', address:'9310 W SAHARA AVE STE 3, LAS VEGAS, NV 89117', lat:36.14457, lon:-115.29897 },
-    { store:'CENTENNIAL HILLS, NV 472', address:'6525 N BUFFALO DR STE 110, LAS VEGAS, NV 89131', lat:36.28097, lon:-115.26594 },
-    { store:'WEST LAS VEGAS, NV #553', address:'5270 S FORT APACHE RD STE 310, LAS VEGAS, NV 89148', lat:36.09306, lon:-115.29732 },
-    { store:'ALIANTE, NV #615', address:'6945 ALIANTE PKWY STE 101, NORTH LAS VEGAS, NV 89084', lat:36.28684, lon:-115.17763 },
-    { store:'NORTH EL PASO, TX #728', address:'4650 WOODROW BEAN STE D2, EL PASO, TX 79924', lat:31.89829, lon:-106.4356 },
-    { store:'NORTH ALBUQUERQUE, NM #764', address:'6650 HOLLY AVE NE STE 107A, ALBUQUERQUE, NM 87113', lat:35.17493, lon:-106.57274 },
-    { store:'SAHARA, NV #1102', address:'9120 W SAHARA AVE, LAS VEGAS, NV 89117', lat:36.1445, lon:-115.29576 },
-    { store:'CENTENNIAL, NV #1104', address:'6275 CENTENNIAL CENTER BLVD STE 110, LAS VEGAS, NV 89149', lat:36.27411, lon:-115.26832 },
-    { store:'DEAN MARTIN, NV #1105', address:'7470 DEAN MARTIN DR STE 104, LAS VEGAS, NV 89139', lat:36.05414, lon:-115.18351 },
-  ],
-  16: [
-    { store:'MESA 199', address:'1927 N GILBERT RD STE 3, MESA, AZ 85203', lat:33.45055, lon:-111.7876 },
-    { store:'GILBERT 297', address:'899 N VAL VISTA DR STE 101, GILBERT, AZ 85234', lat:33.36644, lon:-111.75603 },
-    { store:'NORTH MESA #429', address:'2920 N POWER RD STE 106, MESA, AZ 85215', lat:33.46905, lon:-111.68411 },
-    { store:'GILBERT FIESTA, AZ 460', address:'183 E WILLIAMS FIELD RD STE 101, GILBERT, AZ 85295', lat:33.30634, lon:-111.78559 },
-    { store:'SOUTH MESA, AZ 511', address:'2905 S ELLSWORTH RD STE 106-107, MESA, AZ 85212', lat:33.36256, lon:-111.63576 },
-    { store:'POWER RANCH, AZ 545', address:'8495 S POWER RD STE 101, QUEEN CREEK, AZ 85142', lat:33.26473, lon:-111.68586 },
-    { store:'NE MESA, AZ #575', address:'1157 N ELLSWORTH RD STE 104-105, MESA, AZ 85207', lat:33.43625, lon:-111.63248 },
-    { store:'EAST MESA, AZ 599', address:'5235 E SOUTHERN AVE STE 101, MESA, AZ 85206', lat:33.39377, lon:-111.71754 },
-    { store:'SE GILBERT, AZ #656', address:'3050 E CHANDLER HEIGHTS RD STE 100, GILBERT, AZ 85298', lat:33.23392, lon:-111.72965 },
-    { store:'SE MESA, AZ #792', address:'9053 E BASELINE RD STE A-104, MESA, AZ 85209', lat:33.37907, lon:-111.63858 },
-    { store:'GILBERT VAL VISTA, AZ #794', address:'754 S VAL VISTA DR STE 111, GILBERT, AZ 85296', lat:33.33657, lon:-111.75707 },
-    { store:'GOLD CANYON, AZ #844', address:'5301 S SUPERSTITION MOUNTAIN DR STE, GOLD CANYON, AZ 85118', lat:33.3676, lon:-111.47617 },
-    { store:'QUEEN CREEK, AZ #927', address:'1749 W HUNT HWY STE 105, SAN TAN VALLEY, AZ 85143', lat:33.17819, lon:-111.58556 },
-    { store:'APACHE JUNCTION, AZ #965', address:'1545 W BROADWAY AVE STE 105, APACHE JUNCTION, AZ 85120', lat:33.40777, lon:-111.56282 },
-    { store:'BASELINE, AZ #1110', address:'1908 E BASELINE RD, MESA, AZ 85204', lat:33.37914, lon:-111.79106 },
-    { store:'QUEEN CREEK, AZ #1115', address:'4844 S VAL VISTA R STE A-101, GILBERT, AZ 85298', lat:33.26237, lon:-111.75559 },
-    { store:'GREENFIELD, AZ #1118', address:'4410 E UNIVERSITY DR STE 101, MESA, AZ 85205', lat:33.42381, lon:-111.73579 },
-    { store:'Queen Creek Village #1518', address:'20852 E OCOTILLO RD STE 102/103, QUEEN CREEK, AZ 85142', lat:33.24925, lon:-111.63305 },
-  ],
-  17: [
-    { store:'CENTRAL PHOENIX, AZ #241', address:'742 E GLENDALE AVE STE 140, PHOENIX, AZ 85020', lat:33.53834, lon:-112.06385 },
-    { store:'GLENDALE/THUNDERBIRD, AZ #252', address:'3425 W THUNDERBIRD RD STE 3, PHOENIX, AZ 85053', lat:33.61069, lon:-112.13222 },
-    { store:'PIESTEWA PEAK, AZ #259', address:'10633 N 32ND ST, PHOENIX, AZ 85028', lat:33.58323, lon:-112.01305 },
-    { store:'WEST PHOENIX, AZ #437', address:'2020 N 75TH AVE STE 12, PHOENIX, AZ 85035', lat:33.47041, lon:-112.22087 },
-    { store:'SURPRISE, AZ #442', address:'14557 W GRAND AVE STE B102 B103, SURPRISE, AZ 85374', lat:33.65754, lon:-112.37475 },
-    { store:'LITCHFIELD PARK, AZ #464', address:'13000 W INDIAN SCHOOL RD STE A12, LITCHFIELD PARK, AZ 85340', lat:33.49337, lon:-112.3392 },
-    { store:'GOODYEAR-ESTRELLA, AZ #507', address:'500 N ESTRELLA PKWY STE B6 B6-B7, GOODYEAR, AZ 85338', lat:33.45232, lon:-112.39267 },
-    { store:'GLENDALE, AZ #518', address:'5110 W OLIVE AVE STE B, GLENDALE, AZ 85302', lat:33.56763, lon:-112.17054 },
-    { store:'SOUTH SURPRISE, AZ #564', address:'13954 W WADDELL RD STE 105-106, SURPRISE, AZ 85379', lat:33.6093, lon:-112.36039 },
-    { store:'PEORIA CROSSING, AZ #585', address:'9184 W NORTHERN AVE STE 107, GLENDALE, AZ 85305', lat:33.55182, lon:-112.25664 },
-    { store:'BUCKEYE, AZ #645', address:'818 S WATSON RD STE 103, BUCKEYE, AZ 85326', lat:33.43932, lon:-112.55652 },
-    { store:'WEST SURPRISE, AZ #648', address:'17067 W BELL RD STE 100, SURPRISE, AZ 85374', lat:33.63876, lon:-112.42567 },
-    { store:'GOODYEAR LITCHFIELD, AZ #798', address:'14140 W INDIAN SCHOOL RD STE B3, GOODYEAR, AZ 85395', lat:33.48745, lon:-112.36337 },
-    { store:'ESTRELLA, AZ #933', address:'17650 W ELLIOT RD STE A140, GOODYEAR, AZ 85338', lat:33.35607, lon:-112.42926 },
-    { store:'THUNDERBIRD, AZ #1109', address:'4718 E THUNDERBIRD RD, PHOENIX, AZ 85032', lat:33.61162, lon:-111.97833 },
-    { store:'Cave Creek #1271', address:'16427 N CAVE CREEK RD, PHOENIX, AZ 85032', lat:33.63667, lon:-112.03073 },
-    { store:'Cactus #1272', address:'4848 E CACTUS RD STE 810, SCOTTSDALE, AZ 85254', lat:33.59988, lon:-111.97635 },
-    { store:'7th Street #1273', address:'8322 N 7TH ST, PHOENIX, AZ 85020', lat:33.55987, lon:-112.06534 },
-    { store:'Dunlap #1276', address:'3539 W DUNLAP AVE, PHOENIX, AZ 85051', lat:33.5675, lon:-112.13583 },
-  ],
-  18: [
-    { store:'PARADISE VALLEY, AZ #258', address:'4811 E GREENWAY RD STE F-1, SCOTTSDALE, AZ 85254', lat:33.62596, lon:-111.97706 },
-    { store:'DEER VALLEY, AZ #339', address:'550 W BELL RD STE 101, PHOENIX, AZ 85023', lat:33.6406, lon:-112.0812 },
-    { store:'TATUM RANCH, AZ #430', address:'28325 N TATUM BLVD STE 10, CAVE CREEK, AZ 85331', lat:33.74249, lon:-111.97798 },
-    { store:'GRAYHAWK, AZ #438', address:'20731 N SCOTTSDALE RD STE 101, SCOTTSDALE, AZ 85255', lat:33.67541, lon:-111.92534 },
-    { store:'NORTH PEORIA, AZ #473', address:'8385 W DEER VALLEY RD STE 100, PEORIA, AZ 85382', lat:33.68152, lon:-112.23988 },
-    { store:'ANTHEM, AZ #477', address:'3655 W ANTHEM WAY STE A137, PHOENIX, AZ 85086', lat:33.86617, lon:-112.13769 },
-    { store:'NORTH SCOTTSDALE, AZ #514', address:'32409 N SCOTTSDALE RD STE 101, SCOTTSDALE, AZ 85266', lat:33.77933, lon:-111.92571 },
-    { store:'NE GLENDALE, AZ #573', address:'3830 W PINNACLE PEAK RD STE 109, GLENDALE, AZ 85310', lat:33.69838, lon:-112.14255 },
-    { store:'DOVE VALLEY, AZ #610', address:'4705 E CAREFREE HWY STE 121, CAVE CREEK, AZ 85331', lat:33.79905, lon:-111.97988 },
-    { store:'NORTH PHOENIX, AZ #631', address:'21043 N CAVE CREEK RD STE A5, PHOENIX, AZ 85024', lat:33.67886, lon:-112.03007 },
-    { store:'LAKE PLEASANT, AZ #646', address:'9980 W HAPPY VALLEY PKWY STE 1140, PEORIA, AZ 85383', lat:33.71132, lon:-112.27414 },
-    { store:'PHOENIX TATUM, AZ #795', address:'4601 E BELL RD STE 13, PHOENIX, AZ 85032', lat:33.64005, lon:-111.98219 },
-    { store:'GLENDALE ARROWHEAD, AZ #796', address:'20241 N 67TH AVE STE A6, GLENDALE, AZ 85308', lat:33.66981, lon:-112.20286 },
-    { store:'PEORIA CACTUS, AZ #797', address:'7435 W CACTUS RD STE 113, PEORIA, AZ 85381', lat:33.59583, lon:-112.21793 },
-    { store:'VISTANCIA, AZ #980', address:'28465 N VISTANCIA BLVD STE B-103, PEORIA, AZ 85383', lat:33.74019, lon:-112.32189 },
-    { store:'HAPPY VALLEY, AZ #1066', address:'6635 W HAPPY VALLEY RD STE A101, GLENDALE, AZ 85310', lat:33.71206, lon:-112.20251 },
-    { store:'35TH & BELL, AZ #1067', address:'3430 W BELL RD, PHOENIX, AZ 85053', lat:33.63976, lon:-112.13329 },
-    { store:'BELL RD, AZ #1112', address:'6358 W BELL RD, GLENDALE, AZ 85308', lat:33.63868, lon:-112.1961 },
-    { store:'Moon Valley #1352', address:'15440 N 7TH ST STE 7, PHOENIX, AZ 85022', lat:33.62711, lon:-112.06625 },
-    { store:'PHOENIX, AZ CSC #3000', address:'3525 E WOOD ST STE 1, PHOENIX, AZ 85040', lat:33.40873, lon:-112.00532 },
-  ],
-  19: [
-    { store:'TEMPE-2, AZ #183', address:'1761 E WARNER RD STE 6, TEMPE, AZ 85284', lat:33.33458, lon:-111.91209 },
-    { store:'SCOTTSDALE,AZ #191', address:'10390 N 90TH ST STE B, SCOTTSDALE, AZ 85258', lat:33.58041, lon:-111.88695 },
-    { store:'ARCADIA CROSSING, AZ #195', address:'2814 N 44TH ST STE 104, PHOENIX, AZ 85008', lat:33.47938, lon:-111.98707 },
-    { store:'AHWATUKEE, AZ #238', address:'4615 E RAY RD STE E-1, PHOENIX, AZ 85044', lat:33.31966, lon:-111.98357 },
-    { store:'SCOTTSDALE-2, AZ #264', address:'7908 E CHAPARRAL RD STE 111, SCOTTSDALE, AZ 85250', lat:33.50949, lon:-111.91153 },
-    { store:'NORTH TEMPE 409', address:'3130 S MCCLINTOCK DR, TEMPE, AZ 85282', lat:33.39507, lon:-111.90919 },
-    { store:'S. CHANDLER 427', address:'2860 S ALMA SCHOOL RD STE 30, CHANDLER, AZ 85286', lat:33.26398, lon:-111.85877 },
-    { store:'FOUNTAIN HILLS, AZ #469', address:'13243 N LA MONTANA DR STE 1, FOUNTAIN HILLS, AZ 85268', lat:33.60735, lon:-111.72047 },
-    { store:'MCDOWELL MOUNTAIN RANCH, AZ552', address:'14684 N FRANK LLOYD WRIGHT BLVD STE, SCOTTSDALE, AZ 85260', lat:33.62026, lon:-111.87428 },
-    { store:'EAST CHANDLER, AZ #563', address:'1960 W RAY RD, CHANDLER, AZ 85224', lat:33.32072, lon:-111.87581 },
-    { store:'CHANDLER MARKETPLACE, AZ 566', address:'4920 S GILBERT RD STE 6, CHANDLER, AZ 85249', lat:33.23537, lon:-111.78957 },
-    { store:'WEST AHWATUKEE, AZ #591', address:'1442 E CHANDLER BLVD STE 105, PHOENIX, AZ 85048', lat:33.30529, lon:-112.05275 },
-    { store:'CASA GRANDE, AZ 611', address:'1645 N TREKELL RD STE 103, CASA GRANDE, AZ 85122', lat:32.89623, lon:-111.74006 },
-    { store:'LAVEEN, AZ #614', address:'5270 W BASELINE RD STE 145, LAVEEN, AZ 85339', lat:33.37828, lon:-112.1736 },
-    { store:'CHANDLER RIGGS MARKET PL #790', address:'975 E RIGGS RD STE 9, CHANDLER, AZ 85249', lat:33.21771, lon:-111.82625 },
-    { store:'MARICOPA, AZ #816', address:'20917 N JOHN WAYNE PKWY STE A101, MARICOPA, AZ 85139', lat:33.07028, lon:-112.04514 },
-    { store:'INDIAN SCHOOL AZ #868', address:'2005 E INDIAN SCHOOL RD STE 101, PHOENIX, AZ 85016', lat:33.4947, lon:-112.03727 },
-    { store:'ALMA SCHOOL, AZ #1111', address:'2164 N ALMA SCHOOL RD # 103, CHANDLER, AZ 85224', lat:33.3378, lon:-111.85954 },
-    { store:'NORTH 90TH AZ #1114', address:'9550 N 90TH ST STE A101, SCOTTSDALE, AZ 85258', lat:33.57213, lon:-111.88684 },
-    { store:'THOMAS, AZ #1117', address:'7919 E THOMAS RD STE 106 STE 107, SCOTTSDALE, AZ 85251', lat:33.48027, lon:-111.91077 },
-  ],
-  20: [
-    { store:'34', address:'SAN ANTONIO, TX #34, 2418 AUSTIN HWY STE A, SAN ANTONIO TX', lat:29.5099, lon:-98.40819 },
-    { store:'49', address:'CASTLE HILLS, TX #49, 2609 JACKSON KELLER RD, SAN ANTONIO TX', lat:29.51907, lon:-98.53473 },
-    { store:'153', address:'SAN ANTONIO,TX #153, 300 W BITTERS RD STE 175, SAN ANTONIO TX', lat:29.56822, lon:-98.48685 },
-    { store:'256', address:'MC ALLEN, TX #256, 510 E EXPRESSWAY 83, MCALLEN TX', lat:26.18727, lon:-98.2168 },
-    { store:'399', address:'NW SAN ANTONIO 399, 6895 BANDERA RD, SAN ANTONIO TX', lat:29.48029, lon:-98.61596 },
-    { store:'481', address:'BROWNSVILLE, TX #481, 2451 PABLO KISEL BLVD STE C1, BROWNSVILLE TX', lat:25.95906, lon:-97.50591 },
-    { store:'487', address:'NORTH SAN ANTONIO, TX 487, 21019 US HIGHWAY 281 N STE 824, SAN ANTONIO TX', lat:29.64218, lon:-98.45612 },
-    { store:'578', address:'NE SAN ANTONIO, TX 578, 8335 AGORA PKWY STE 104, SCHERTZ TX', lat:29.57348, lon:-98.32461 },
-    { store:'627', address:'NW SAN ANTONIO, TX 627, 4079 N LOOP 1604 W STE 108, SAN ANTONIO TX', lat:29.6019, lon:-98.56407 },
-    { store:'650', address:'LAREDO, TX #650, 7309 SAN DARIO AVE STE 120, LAREDO TX', lat:27.56792, lon:-99.50235 },
-    { store:'729', address:'BOERNE, TX #729, 24165 W INTERSTATE 10 STE 429, SAN ANTONIO TX', lat:29.66479, lon:-98.63212 },
-    { store:'784', address:'SAN ANTONIO/BANDERA, TX #784, 9234 N LOOP 1604 W STE 115, SAN ANTONIO TX', lat:29.55466, lon:-98.66423 },
-    { store:'804', address:'HARLINGEN, TX #804, 509 S EXPRESSWAY 83 STE H-1, HARLINGEN TX', lat:26.1876, lon:-97.7158 },
-    { store:'857', address:'BULVERDE, TX #857, 20475 STATE HIGHWAY 46 W STE 150, SPRING BRANCH TX', lat:29.79695, lon:-98.42731 },
-    { store:'953', address:'ALAMO RANCH, TX #953, 10919 CULEBRA RD # 135, SAN ANTONIO TX', lat:29.49683, lon:-98.70783 },
-    { store:'966', address:'WESLACO, TX #966, 1210 W EXPRESSWAY 83, WESLACO TX', lat:26.17318, lon:-98.00265 },
-    { store:'1004', address:'SAN ANTONIO, TX #1004, 18138 SAN PEDRO AVE STE 134, SAN ANTONIO TX', lat:29.60625, lon:-98.46886 },
-    { store:'1024', address:'MCALLEN, TX #1024, 5612 N 10TH ST STE 100, MCALLEN TX', lat:26.25472, lon:-98.22121 },
-    { store:'1025', address:'W SAN ANTONIO, TX #1025, 119 SW LOOP 410 STE 112, SAN ANTONIO TX', lat:29.43793, lon:-98.64318 },
-    { store:'1073', address:'NORTH BOERNE, TX #1073, 215 W BANDERA RD STE 109, BOERNE TX', lat:29.78044, lon:-98.73209 },
-    { store:'1099', address:'E. LAREDO #1099, 3502 CLARK BLVD STE 111, LAREDO TX', lat:27.51728, lon:-99.45918 },
-    { store:'1503', address:'W. San Antonio, TX #1503, 415 W LOOP 1604 S STE 106, SAN ANTONIO TX', lat:29.42857, lon:-98.71371 },
-    { store:'1512', address:'Cibolo #1512, 857 CIBOLO VALLEY DR STE 224, CIBOLO TX', lat:29.5716, lon:-98.23938 },
-    { store:'1530', address:'Terrell Heights #1530, 1455 AUSTIN HWY STE 108, SAN ANTONIO TX', lat:29.49295, lon:-98.43559 },
-    { store:'3012', address:'SAN ANTONIO, TX CSC #3012, 2418 AUSTIN HWY STE B, SAN ANTONIO TX', lat:29.5099, lon:-98.40819 },
-  ],
-  21: [
-    { store:'57', address:'HOUSTON FM1960, TX #57, 1600 CYPRESS CREEK PKWY, HOUSTON TX', lat:30.01263, lon:-95.45372 },
-    { store:'145', address:'NW HOUSTON, TX #145, 10791 JONES RD, HOUSTON TX', lat:29.93031, lon:-95.58503 },
-    { store:'247', address:'CHAMPIONS FOREST 247, 5610 FM 1960 RD W, HOUSTON TX', lat:29.98062, lon:-95.51166 },
-    { store:'346', address:'COPPERFIELD 346, 7075 HIGHWAY 6 N STE A, HOUSTON TX', lat:29.88069, lon:-95.64543 },
-    { store:'424', address:'290 FREEWAY, TX #424, 6417 W 43RD ST, HOUSTON TX', lat:29.83308, lon:-95.48597 },
-    { store:'503', address:'TOMBALL, TX 503, 22625 STATE HIGHWAY 249 STE 650, TOMBALL TX', lat:30.01651, lon:-95.5934 },
-    { store:'584', address:'CYPRESS, TX 584, 26084 HIGHWAY 290 STE 165, CYPRESS TX', lat:29.97343, lon:-95.6969 },
-    { store:'624', address:'NW TOMBALL, TX 624, 14320 FM 2920 RD STE A, TOMBALL TX', lat:30.08946, lon:-95.63914 },
-    { store:'752', address:'COLLEGE STATION, TX #752, 900 HARVEY RD STE 17, COLLEGE STATION TX', lat:30.62256, lon:-96.31046 },
-    { store:'845', address:'WEST MAGNOLIA, TX #845, 18640 FM 1488 RD STE K, MAGNOLIA TX', lat:30.21299, lon:-95.75298 },
-    { store:'975', address:'WEST SPRING, TX #975, 4660 LOUETTA RD STE 118, SPRING TX', lat:30.04269, lon:-95.4846 },
-    { store:'981', address:'WEST CYPRESS, TX #981, 9814 FRY RD STE 140, CYPRESS TX', lat:29.92779, lon:-95.72815 },
-    { store:'986', address:'COLLEGE STATION, TX #986, 895 WILLIAM D FITCH PKWY, COLLEGE STATION TX', lat:30.55504, lon:-96.26363 },
-    { store:'1005', address:'CHAMPIONS, TX #1005, 7911 CYPRESS CREEK PKWY STE B, HOUSTON TX', lat:29.96197, lon:-95.54551 },
-    { store:'1016', address:'COPPERFIELD, TX #1016, 6769 HIGHWAY 6 N, HOUSTON TX', lat:29.87416, lon:-95.64537 },
-    { store:'1026', address:'CYPRESS, TX #1026, 25823 HIGHWAY 290 STE M, CYPRESS TX', lat:29.96833, lon:-95.69182 },
-    { store:'1086', address:'GARDEN OAKS, TX #1086, 3804 N SHEPHERD DR., HOUSTON TX', lat:29.82598, lon:-95.42345 },
-    { store:'1301', address:'HEATHERWICK #1301, 12111 HEATHERWICK DR, CYPRESS TX', lat:29.99701, lon:-95.60591 },
-    { store:'1303', address:'CYPRESS #1303, 24150 US-290 SUITE 260, CYPRESS TX', lat:29.98288, lon:-95.65465 },
-    { store:'1305', address:'SPRING #1305, 8242 LOUETTA RD, SPRING TX', lat:30.01331, lon:-95.53843 },
-  ],
-  22: [
-    { store:'237', address:'KINGWOOD 237, 2855 W LAKE HOUSTON PKWY STE 110, KINGWOOD TX', lat:30.04777, lon:-95.18345 },
-    { store:'369', address:'BAYTOWN, TX #369, 4525 GARTH RD, BAYTOWN TX', lat:29.77282, lon:-94.97773 },
-    { store:'434', address:'BEAUMONT, TX #434, 3939 DOWLEN RD STE 1, BEAUMONT TX', lat:30.11575, lon:-94.16883 },
-    { store:'461', address:'WOODLANDS, TX 461, 19189 INTERSTATE 45 S STE G, CONROE TX', lat:30.17728, lon:-95.45121 },
-    { store:'675', address:'CONROE, TX #675, 1302 W DAVIS ST STE B, CONROE TX', lat:30.31597, lon:-95.47383 },
-    { store:'738', address:'MAGNOLIA, TX #738, 6960 FM 1488 RD STE 110, MAGNOLIA TX', lat:30.22078, lon:-95.5741 },
-    { store:'778', address:'ATASCOCITA, TX #778, 19211 W LAKE HOUSTON PKWY STE 220, HUMBLE TX', lat:30.00069, lon:-95.16323 },
-    { store:'781', address:'CROSBY, TX #781, 14045 FM 2100 RD STE 230, CROSBY TX', lat:29.89095, lon:-95.0634 },
-    { store:'819', address:'PORT ARTHUR, TX #819, 2828 HIGHWAY 365 STE 200, NEDERLAND TX', lat:29.95324, lon:-93.98758 },
-    { store:'871', address:'LUFKIN, TX #871, 3055 S JOHN REDDITT DR, LUFKIN TX', lat:31.30956, lon:-94.72761 },
-    { store:'936', address:'SPRING, TX #936, 8640 W RAYFORD RD STE 110, SPRING TX', lat:30.11275, lon:-95.552 },
-    { store:'1002', address:'HUMBLE, TX #1002, 9723 FM 1960 BYPASS RD W, HUMBLE TX', lat:30.00505, lon:-95.27661 },
-    { store:'1007', address:'BEAUMONT, TX #1007, 5866 EASTEX FWY MAIN SUITE B08, BEAUMONT TX', lat:30.12599, lon:-94.15272 },
-    { store:'1017', address:'WOODLANDS, TX #1017, 19075 INTERSTATE 45 S STE 101, CONROE TX', lat:30.18813, lon:-95.45181 },
-    { store:'1019', address:'SPRING, TX #1019, 20141 INTERSTATE 45 STE 300, SPRING TX', lat:30.05851, lon:-95.43349 },
-    { store:'1055', address:'LUMBERTON, TX #1055, 301 N LHS DR STE 102, LUMBERTON TX', lat:30.23698, lon:-94.20363 },
-    { store:'1300', address:'WOODLANDS #1300, 4747 RESEARCH FOREST DR STE 400, SPRING TX', lat:30.1854, lon:-95.49016 },
-    { store:'1304', address:'HUMBLE #1304, 2714 W LAKE HOUSTON PKWY STE 210, KINGWOOD TX', lat:30.04675, lon:-95.18168 },
-    { store:'1513', address:'Spring # 1513, 6941 SPRING STUEBNER RD STE 200, SPRING TX', lat:30.08537, lon:-95.52513 },
-    { store:'3014', address:'NORTH HOUSTON, TX CSC #3014, 18209 CHISHOLM TRL STE 105, HOUSTON TX', lat:29.96472, lon:-95.40006 },
-  ],
-  24: [
-    { store:'22', address:'HOUSTON, TX #22, 9401 KATY FWY STE C, HOUSTON TX', lat:29.78375, lon:-95.52442 },
-    { store:'193', address:'KATY, TX #193, 430 S MASON RD STE 110, KATY TX', lat:29.77819, lon:-95.75289 },
-    { store:'205', address:'DAIRY ASHFORD, TX #205, 14654 MEMORIAL DR SPC 10, HOUSTON TX', lat:29.77013, lon:-95.60742 },
-    { store:'374', address:'MISSION BEND, TX #374, 6890 HIGHWAY 6 S, HOUSTON TX', lat:29.70346, lon:-95.64401 },
-    { store:'629', address:'ROSENBERG, TX #629, 7633 TOWN CENTER BLVD, ROSENBERG TX', lat:29.54713, lon:-95.75198 },
-    { store:'679', address:'KATY BELLA TERRA, TX #679, 22720 BELLAIRE BLVD STE 500, RICHMOND TX', lat:29.68908, lon:-95.77247 },
-    { store:'779', address:'MISSOURI CITY, TX #779, 8720 HIGHWAY 6 STE 100, MISSOURI CITY TX', lat:29.53953, lon:-95.53602 },
-    { store:'969', address:'CINCO RANCH, TX #969, 5102 FM 1463 RD STE 1000, KATY TX', lat:29.71137, lon:-95.84621 },
-    { store:'1001', address:'W CENTRAL HOUSTON,TX #1001, 9770 KATY FWY STE 600, HOUSTON TX', lat:29.78519, lon:-95.53445 },
-    { store:'1009', address:'SUGARLAND, TX #1009, 15495 SOUTHWEST FWY, SUGAR LAND TX', lat:29.60447, lon:-95.61555 },
-    { store:'1012', address:'WEST HOUSTON, TX #1012, 11920 WESTHEIMER RD STE A, HOUSTON TX', lat:29.73665, lon:-95.58953 },
-    { store:'1018', address:'KATY TX #1018, 235 S MASON RD, KATY TX', lat:29.78124, lon:-95.75165 },
-    { store:'1027', address:'MISSOURI CITY, TX #1027, 6245 HIGHWAY 6 STE 500, MISSOURI CITY TX', lat:29.56459, lon:-95.56326 },
-    { store:'1053', address:'NORTH SUGARLAND, TX #1053, 13509 UNIVERSITY BLVD STE 500, SUGAR LAND TX', lat:29.58498, lon:-95.64809 },
-    { store:'1081', address:'NORTH CINCO RANCH, TX #1081, 25820 WESTHEIMER PKWY, KATY TX', lat:29.74909, lon:-95.79697 },
-    { store:'1302', address:'KATY #1302, 22052 WESTHEIMER PKWY, KATY TX', lat:29.73397, lon:-95.75269 },
-    { store:'1501', address:'Morton Ranch, TX #1501, 23053 CLAY RD STE 200, KATY TX', lat:29.83144, lon:-95.77372 },
-  ],
-  25: [
-    { store:'29', address:'MEYERLAND, TX #29, 70 BRAESWOOD SQ # M18, HOUSTON TX', lat:29.6791, lon:-95.47781 },
-    { store:'69', address:'CORPUS CHRISTI, TX #69, 5425 S PADRE ISLAND DR STE 111, CORPUS CHRISTI TX', lat:27.71011, lon:-97.37578 },
-    { store:'116', address:'WEBSTER, TX #116, 1183 W NASA RD 1, WEBSTER TX', lat:29.53013, lon:-95.12842 },
-    { store:'133', address:'HOUSTON-2, TX #133, 2540 BROADWAY ST STE G, PEARLAND TX', lat:29.55289, lon:-95.25619 },
-    { store:'260', address:'WEST UNIVERSITY, TX #260, 3143 W HOLCOMBE BLVD, HOUSTON TX', lat:29.70596, lon:-95.42627 },
-    { store:'289', address:'PASADENA, TX #289, 6831 SPENCER HWY STE A, PASADENA TX', lat:29.66357, lon:-95.13434 },
-    { store:'405', address:'I-10 EAST,TX #405, 13439 EAST FWY, HOUSTON TX', lat:29.77106, lon:-95.18528 },
-    { store:'433', address:'CLEAR LAKE, TX #433, 2402 BAY AREA BLVD STE K, HOUSTON TX', lat:29.57243, lon:-95.10923 },
-    { store:'520', address:'PASADENA #2, TX #520, 5233 FAIRMONT PKWY STE H, PASADENA TX', lat:29.65001, lon:-95.16105 },
-    { store:'601', address:'SILVERLAKE, TX #601, 10228 BROADWAY ST STE 116, PEARLAND TX', lat:29.55597, lon:-95.37868 },
-    { store:'602', address:'LEAGUE CITY, TX #602, 2920 GULF FWY S STE A, LEAGUE CITY TX', lat:29.46855, lon:-95.09219 },
-    { store:'736', address:'ALVIN, TX #736, 161 N BYPASS 35 STE D, ALVIN TX', lat:29.4236, lon:-95.22788 },
-    { store:'756', address:'VICTORIA, TX #756, 9104 N NAVARRO ST STE 110, VICTORIA TX', lat:28.87963, lon:-96.99643 },
-    { store:'818', address:'LAKE JACKSON, TX #818, 204 HIGHWAY 332 W STE B, LAKE JACKSON TX', lat:29.04866, lon:-95.46504 },
-    { store:'944', address:'LA MARQUE, TX #944, 6608 INTERSTATE 45 STE 400, LA MARQUE TX', lat:29.40476, lon:-95.03745 },
-    { store:'1003', address:'WEBSTER, TX #1003, 20093 GULF FWY, WEBSTER TX', lat:29.53517, lon:-95.13616 },
-    { store:'1014', address:'PASADENA, TX #1014, 5712 FAIRMONT PKWY, PASADENA TX', lat:29.64952, lon:-95.1524 },
-    { store:'1020', address:'PEARLAND, TX #1020, 10621 BROADWAY ST STE 101, PEARLAND TX', lat:29.55605, lon:-95.38475 },
-    { store:'1022', address:'CORPUS CHRISTI, TX #1022, 1502 AIRLINE RD STE 202, CORPUS CHRISTI TX', lat:27.70284, lon:-97.36284 },
-    { store:'1079', address:'KEMAH, TX #1079, 153 FM 518 RD STE A, KEMAH TX', lat:29.53734, lon:-95.01901 },
-    { store:'3004', address:'HOUSTON,TX CSC #3004, 3780 WESTCHASE DR, HOUSTON TX', lat:29.72439, lon:-95.55138 },
-  ],
-  26: [
-    { store:'39', address:'AUSTIN, TX #39, 6326 BURNET RD, AUSTIN TX', lat:30.33912, lon:-97.7392 },
-    { store:'423', address:'KILLEEN #423, 1512 LOWES BLVD STE 101, KILLEEN TX', lat:31.08889, lon:-97.72597 },
-    { store:'674', address:'NEW BRAUNFELS, TX #674, 651 N BUSINESS IH 35 STE 250, NEW BRAUNFELS TX', lat:29.69751, lon:-98.10242 },
-    { store:'682', address:'GEORGETOWN, TX #682, 1013 W UNIVERSITY AVE STE 105, GEORGETOWN TX', lat:30.63178, lon:-97.6943 },
-    { store:'714', address:'TEMPLE, TX #714, 2102 SW H K DODGEN LOOP STE 115, TEMPLE TX', lat:31.07662, lon:-97.37749 },
-    { store:'715', address:'ROUND ROCK, TX #715, 110 N INTERSTATE 35 STE 100, ROUND ROCK TX', lat:30.50828, lon:-97.68751 },
-    { store:'717', address:'BEE CAVES, TX #717, 12400 W HIGHWAY 71 STE 500, AUSTIN TX', lat:30.30493, lon:-97.93427 },
-    { store:'718', address:'WESTLAKE HILLS, TX #718, 701 S CAPITAL OF TEXAS HWY STE D440, AUSTIN TX', lat:30.29183, lon:-97.82749 },
-    { store:'767', address:'SAN MARCOS, TX #767, 1050 MCKINLEY PLACE DR STE 335, SAN MARCOS TX', lat:29.85369, lon:-97.95336 },
-    { store:'787', address:'CEDAR PARK, TX #787, 401 W WHITESTONE BLVD BLDG C400, CEDAR PARK TX', lat:30.52022, lon:-97.83403 },
-    { store:'887', address:'STEINER RANCH, TX #887, 5145 RANCH ROAD 620 N STE L150, AUSTIN TX', lat:30.38982, lon:-97.88325 },
-    { store:'957', address:'KYLE, TX #957, 5132 KYLE CENTER DR STE 107, KYLE TX', lat:30.01188, lon:-97.86485 },
-    { store:'958', address:'DRIPPING SPRINGS, TX #958, 100 COMMONS RD, DRIPPING SPRINGS TX', lat:30.19282, lon:-98.08504 },
-    { store:'1008', address:'BRODIE LN SOUTH, TX #1008, 5400 BRODIE LN STE 270, AUSTIN TX', lat:30.23029, lon:-97.82023 },
-    { store:'1010', address:'AUSTIN 183/NORTH, TX #1010, 10710 RESEARCH BLVD STE 108, AUSTIN TX', lat:30.39824, lon:-97.74928 },
-    { store:'1015', address:'N Austin/RR620, TX #1015, 13201 RANCH ROAD 620 N # C-300, AUSTIN TX', lat:30.46999, lon:-97.79051 },
-    { store:'1021', address:'ROUND ROCK, TX #1021, 2601 S INTERSTATE 35 STE B650, ROUND ROCK TX', lat:30.48328, lon:-97.67423 },
-    { store:'1023', address:'SOUTH AUSTIN, TX #1023, 9600 S INTERSTATE 35 STE P400, AUSTIN TX', lat:30.15876, lon:-97.79078 },
-    { store:'1056', address:'BASTROP, TX #1056, 107 CHILDERS DR STE 600, BASTROP TX', lat:30.10417, lon:-97.33012 },
-    { store:'1065', address:'PFLUGERVILLE, TX #1065, 2098 MUIRFIELD BEND DR STE 120, HUTTO TX', lat:30.50506, lon:-97.58146 },
-    { store:'1522', address:'Lakeway, TX #1522, 2303 RANCH ROAD 620 S STE 180, AUSTIN TX', lat:30.34074, lon:-97.96716 },
-  ],
-  27: [
-    { store:'21', address:'RICHARDSON - DALLAS, TX #21, 14203 COIT RD STE 116, DALLAS TX', lat:32.94121, lon:-96.76908 },
-    { store:'33', address:'DALLAS, TX #33, 11722 MARSH LN STE 340, DALLAS TX', lat:32.90864, lon:-96.85595 },
-    { store:'100', address:'GARLAND, TX #100, 1013 NORTHWEST HWY, GARLAND TX', lat:32.86253, lon:-96.64382 },
-    { store:'132', address:'NORTH DALLAS 132, 7114 CAMPBELL RD STE 100, DALLAS TX', lat:32.97911, lon:-96.78383 },
-    { store:'162', address:'EAST RICHARDSON 162, 1332 S PLANO RD STE 300, RICHARDSON TX', lat:32.9327, lon:-96.70166 },
-    { store:'185', address:'DALLAS CENTRAL 185, 9100 N CENTRAL EXPY STE 145, DALLAS TX', lat:32.87258, lon:-96.76976 },
-    { store:'392', address:'N. GARLAND 392, 1802 PLEASANT VALLEY RD STE 200, GARLAND TX', lat:32.93761, lon:-96.60262 },
-    { store:'393', address:'ALLEN, TX #393, 906 W MCDERMOTT DR STE 136, ALLEN TX', lat:33.10221, lon:-96.68381 },
-    { store:'401', address:'CANYON CREEK 401, 401 W PRESIDENT GEORGE BUSH HWY STE, RICHARDSON TX', lat:33.00295, lon:-96.72188 },
-    { store:'543', address:'MESQUITE, TX 543, 1515 N TOWN EAST BLVD STE 528, MESQUITE TX', lat:32.81229, lon:-96.61891 },
-    { store:'568', address:'MURPHY, TX 568, 158 W FM 544 STE 102, PLANO TX', lat:33.01031, lon:-96.61647 },
-    { store:'590', address:'ROCKWALL, TX 590, 983 E INTERSTATE 30 STE 107, ROCKWALL TX', lat:32.90422, lon:-96.45367 },
-    { store:'665', address:'TYLER, TX #665, 3603 S BROADWAY AVE, TYLER TX', lat:32.30974, lon:-95.30075 },
-    { store:'741', address:'GREENVILLE, TX #741, 6103 WESLEY ST STE E, GREENVILLE TX', lat:33.1086, lon:-96.10924 },
-    { store:'751', address:'UNIVERSITY PARK, TX #751, 4560 W MOCKINGBIRD LN STE 114, DALLAS TX', lat:32.83646, lon:-96.82886 },
-    { store:'789', address:'TEXARKANA, TX #789, 244 RICHMOND RANCH RD, TEXARKANA TX', lat:33.4566, lon:-94.09207 },
-    { store:'812', address:'WYLIE, TX #812, 2041 N HIGHWAY 78 STE 104, WYLIE TX', lat:33.02266, lon:-96.51173 },
-    { store:'873', address:'FORNEY, TX #873, 724 E US HIGHWAY 80, FORNEY TX', lat:32.74482, lon:-96.45191 },
-    { store:'875', address:'LONGVIEW, TX #875, 1421 W LOOP 281 STE A, LONGVIEW TX', lat:32.52936, lon:-94.77647 },
-    { store:'983', address:'PARIS, TX #983, 3924 LAMAR AVE, PARIS TX', lat:33.66178, lon:-95.50345 },
-    { store:'1078', address:'LUCAS, TX #1078, 491 S ANGEL PKWY STE 200, ALLEN TX', lat:33.09382, lon:-96.62296 },
-    { store:'1516', address:'Casa Linda - Dallas #1516, 9540 GARLAND RD # 186, DALLAS TX', lat:32.83341, lon:-96.70055 },
-    { store:'1519', address:'Preston Forest - Dallas #1519, 11661 PRESTON RD STE 206, DALLAS TX', lat:32.9074, lon:-96.80552 },
-  ],
-  28: [
-    { store:'Store 58', address:'1168 W 103RD ST, KANSAS CITY, MO 64114', lat:38.9421, lon:-94.60682 },
-    { store:'Store 61', address:'4725 E CENTRAL AVE, WICHITA, KS 67208', lat:37.69373, lon:-97.28074 },
-    { store:'Store 363', address:'4201 S NOLAND RD STE L2, INDEPENDENCE, MO 64055', lat:39.04362, lon:-94.4123 },
-    { store:'Store 447', address:'2721 S 140TH ST STE A, OMAHA, NE 68144', lat:41.23288, lon:-96.13372 },
-    { store:'Store 467', address:'4100 UNIVERSITY AVE STE 112, WEST DES MOINES, IA 50266', lat:41.60037, lon:-93.75978 },
-    { store:'Store 613', address:'14970 W 119TH ST, OLATHE, KS 66062', lat:38.91293, lon:-94.75953 },
-    { store:'Store 637', address:'12111 W MAPLE ST STE 123, WICHITA, KS 67235', lat:37.67892, lon:-97.48126 },
-    { store:'Store 846', address:'8936 N SKYVIEW AVE STE 1740, KANSAS CITY, MO 64154', lat:39.25798, lon:-94.65098 },
-    { store:'Store 859', address:'607 SW US HIGHWAY 40, BLUE SPRINGS, MO 64014', lat:39.00928, lon:-94.27061 },
-    { store:'Store 899', address:'615 N BELT HWY, SAINT JOSEPH, MO 64506', lat:39.77205, lon:-94.80336 },
-    { store:'Store 989', address:'1570 SW WANAMAKER RD STE 180-190, TOPEKA, KS 66604', lat:39.03823, lon:-95.76182 },
-    { store:'Store 1051', address:'8668 NE FLINTLOCK RD, KANSAS CITY, MO 64157', lat:39.24706, lon:-94.46631 },
-    { store:'Store 1068', address:'2307 N ROCK RD STE 900, DERBY, KS 67037', lat:37.57103, lon:-97.24452 },
-  ],
-  29: [
-    { store:'46', address:'PLANO/CENTRAL, TX #46, 230 W PARKER RD STE 110, PLANO TX', lat:33.03965, lon:-96.70784 },
-    { store:'114', address:'CARROLLTON, TX #114, 2626 N JOSEY LN STE 100, CARROLLTON TX', lat:32.98806, lon:-96.89037 },
-    { store:'140', address:'PLANO/INDEPENDENCE 140, 3136 INDEPENDENCE PKWY STE A, PLANO TX', lat:33.04024, lon:-96.75292 },
-    { store:'197', address:'WEST PLANO 197, 1713 PRESTON RD STE D, PLANO TX', lat:33.02299, lon:-96.79536 },
-    { store:'216', address:'NORTH PLANO, TX #216, 3020 LEGACY DR STE 170, PLANO TX', lat:33.07066, lon:-96.75144 },
-    { store:'335', address:'COPPELL 335, 110 W SANDY LAKE RD STE 122, COPPELL TX', lat:32.96947, lon:-96.99525 },
-    { store:'419', address:'FRISCO, TX #419, 4944 PRESTON RD STE 124, FRISCO TX', lat:33.11962, lon:-96.80422 },
-    { store:'426', address:'DENTON 426, 1435 S LOOP 288 STE 121, DENTON TX', lat:33.19506, lon:-97.09299 },
-    { store:'440', address:'MCKINNEY, TX #440, 4610 ELDORADO PKWY, MCKINNEY TX', lat:33.17344, lon:-96.67919 },
-    { store:'525', address:'NW FRISCO, TX #525, 8756 TEEL PKWY STE 300, FRISCO TX', lat:33.15071, lon:-96.86309 },
-    { store:'569', address:'THE COLONY, TX #569, 4679 STATE HIGHWAY 121 STE 145, THE COLONY TX', lat:33.06591, lon:-96.8901 },
-    { store:'626', address:'WEST MCKINNEY, TX #626, 8930 STATE HIGHWAY 121 STE 538, MCKINNEY TX', lat:33.12644, lon:-96.73128 },
-    { store:'748', address:'NORTH MCKINNEY, TX #748, 2050 W UNIVERSITY DR STE 160, MCKINNEY TX', lat:33.21695, lon:-96.64085 },
-    { store:'807', address:'NW MCKINNEY, TX #807, 1411 N CUSTER RD STE 500, MCKINNEY TX', lat:33.21409, lon:-96.733 },
-    { store:'820', address:'SHERMAN, TX #820, 3903 N US HIGHWAY 75 STE 500, SHERMAN TX', lat:33.67806, lon:-96.60818 },
-    { store:'951', address:'PROSPER, TX #951, 1350 N PRESTON RD STE 60, PROSPER TX', lat:33.25394, lon:-96.78454 },
-    { store:'1075', address:'CROSSROADS, TX #1075, 11750 US HIGHWAY 380 STE 300, AUBREY TX', lat:33.22529, lon:-96.98408 },
-    { store:'1077', address:'ANNA, TX #1077, 2530 W WHITE ST STE 108, ANNA TX', lat:33.34656, lon:-96.58162 },
-    { store:'1330', address:'Plano #1330, 2011 W SPRING CREEK PKWY STE 600, PLANO TX', lat:33.05966, lon:-96.73127 },
-    { store:'1507', address:'Corinth, TX #1507, 4451 FM 2181, DENTON TX', lat:33.1313, lon:-97.04231 },
-    { store:'1508', address:'Plano/Willow Bend #1508, 3305 DALLAS PKWY STE 345, PLANO TX', lat:33.04717, lon:-96.83208 },
-  ],
-  31: [
-    { store:'60', address:'MIDLAND ,TX #60, 4005 W WALL ST, MIDLAND TX', lat:31.97369, lon:-102.11804 },
-    { store:'70', address:'HURST, TX #70, 101 W BEDFORD EULESS RD, HURST TX', lat:32.8339, lon:-97.16868 },
-    { store:'115', address:'LEWISVILLE, TX #115, 1093 W MAIN ST STE 220, LEWISVILLE TX', lat:33.04228, lon:-97.01966 },
-    { store:'181', address:'COLLEYVILLE 181, 4908 COLLEYVILLE BLVD STE 300, COLLEYVILLE TX', lat:32.8819, lon:-97.15511 },
-    { store:'222', address:'WATAUGA, TX #222, 6651 WATAUGA RD STE 111, FORT WORTH TX', lat:32.86169, lon:-97.23936 },
-    { store:'227', address:'IRVING 227, 2532 N BELT LINE RD, IRVING TX', lat:32.84227, lon:-96.99242 },
-    { store:'301', address:'WICHITA FALLS, TX #301, 3921 KEMP BLVD, WICHITA FALLS TX', lat:33.87109, lon:-98.53533 },
-    { store:'305', address:'SOUTHLAKE 305, 2315 E SOUTHLAKE BLVD STE 108, SOUTHLAKE TX', lat:32.94023, lon:-97.11457 },
-    { store:'331', address:'LUBBOCK, TX #331, 6231 SLIDE RD, LUBBOCK TX', lat:33.5365, lon:-101.92226 },
-    { store:'358', address:'ODESSA, TX #358, 3851 E 42ND ST, ODESSA TX', lat:31.89025, lon:-102.34931 },
-    { store:'367', address:'FLOWER MOUND, TX #367, 2601 FLOWER MOUND RD STE 113, FLOWER MOUND TX', lat:33.0136, lon:-97.06932 },
-    { store:'439', address:'KELLER, TX #439, 940 KELLER PKWY STE 210, KELLER TX', lat:32.93413, lon:-97.2315 },
-    { store:'498', address:'GRAPEVINE, TX 498, 2140 HALL JOHNSON RD STE 106, GRAPEVINE TX', lat:32.89355, lon:-97.10043 },
-    { store:'530', address:'NORTH WATAUGA, TX 530, 8420 DENTON HWY STE 100 377, FORT WORTH TX', lat:32.89425, lon:-97.2587 },
-    { store:'541', address:'HIGHLAND VILLAGE, TX 541, 2940 JUSTIN RD STE 202, LEWISVILLE TX', lat:33.07374, lon:-97.07428 },
-    { store:'574', address:'ROANOKE, TX 574, 2001 E HIGHWAY 114 STE 150, ROANOKE TX', lat:32.98831, lon:-97.17929 },
-    { store:'576', address:'LAKE WORTH, TX 576, 6548 LAKE WORTH BLVD STE 100, FORT WORTH TX', lat:32.81136, lon:-97.43005 },
-    { store:'737', address:'AMARILLO, TX #737, 3300 S COULTER ST UNIT 22, AMARILLO TX', lat:35.178, lon:-101.92037 },
-    { store:'931', address:'HASLET, TX #931, 2488 AVONDALE HASLET RD STE 156, HASLET TX', lat:32.96795, lon:-97.41528 },
-    { store:'982', address:'NORTH RICHLAND HILLS, TX #982, 8509 DAVIS BLVD STE 150, NORTH RICHLAND HILLS TX', lat:32.9063, lon:-97.19201 },
-    { store:'1091', address:'Saginaw, TX #1091, 7260 BLUE MOUND RD STE 138, FORT WORTH TX', lat:32.87278, lon:-97.34112 },
-    { store:'1098', address:'S. LUBBOCK #1098, 11430 QUAKER AVE STE 100, LUBBOCK TX', lat:33.4878, lon:-101.9058 },
-    { store:'1511', address:'Southlake #1511, 2301 W SOUTHLAKE BLVD, SOUTHLAKE TX', lat:32.93671, lon:-97.18649 },
-  ],
-  32: [
-    { store:'30', address:'ARLINGTON, TX #30, 1104 N FIELDER RD, ARLINGTON TX', lat:32.75148, lon:-97.13177 },
-    { store:'74', address:'FORT WORTH, TX #74, 6120 S HULEN ST, FORT WORTH TX', lat:32.65831, lon:-97.39726 },
-    { store:'147', address:'SO. ARLINGTON 147, 4644 S COOPER ST STE 200, ARLINGTON TX', lat:32.67157, lon:-97.13473 },
-    { store:'224', address:'CAMP BOWIE 224, 6200 CAMP BOWIE BLVD STE 6200, FORT WORTH TX', lat:32.72801, lon:-97.41748 },
-    { store:'255', address:'DUNCANVILLE 255, 702 W WHEATLAND RD, DUNCANVILLE TX', lat:32.64731, lon:-96.92463 },
-    { store:'278', address:'LAKE ARLINGTON 278, 4201 W GREEN OAKS BLVD STE 420, ARLINGTON TX', lat:32.6808, lon:-97.19622 },
-    { store:'372', address:'GRAND PRAIRIE 372, 3824 S CARRIER PKWY STE 410, GRAND PRAIRIE TX', lat:32.68026, lon:-97.00774 },
-    { store:'397', address:'DESOTO 397, 901 N POLK ST STE 311, DESOTO TX', lat:32.60513, lon:-96.84176 },
-    { store:'451', address:'WACO, TX #451, 819 N VALLEY MILLS DR, WACO TX', lat:31.52988, lon:-97.17996 },
-    { store:'516', address:'MANSFIELD, TX 516, 101 W DEBBIE LN STE 108, MANSFIELD TX', lat:32.59277, lon:-97.1442 },
-    { store:'542', address:'BURLESON, TX #542, 811 NE ALSBURY BLVD STE 250, BURLESON TX', lat:32.56315, lon:-97.32198 },
-    { store:'678', address:'DALLAS LAKE PRAIRIE #678, 5244 S STATE HIGHWAY 360 STE 300, GRAND PRAIRIE TX', lat:32.64526, lon:-97.06154 },
-    { store:'699', address:'WEATHERFORD, TX #699, 110 W INTERSTATE 20 STE 100, WEATHERFORD TX', lat:32.73019, lon:-97.79038 },
-    { store:'734', address:'ABILENE, TX #734, 4617 S 14TH ST, ABILENE TX', lat:32.42952, lon:-99.7833 },
-    { store:'740', address:'SAN ANGELO, TX #740, 5769 SHERWOOD WAY STE 110, SAN ANGELO TX', lat:31.42635, lon:-100.51444 },
-    { store:'783', address:'GRANBURY, TX #783, 1030 E US HIGHWAY 377 STE 102, GRANBURY TX', lat:32.43583, lon:-97.77539 },
-    { store:'814', address:'WAXAHACHIE, TX #814, 1440 N HIGHWAY 77 STE 6, WAXAHACHIE TX', lat:32.42438, lon:-96.83899 },
-    { store:'880', address:'CLEBURNE, TX #880, 1301 W HENDERSON ST STE L-5, CLEBURNE TX', lat:32.3416, lon:-97.40457 },
-    { store:'918', address:'HUDSON OAKS, TX #918, 100 S OAKRIDGE DR STE 110, WEATHERFORD TX', lat:32.75688, lon:-97.71079 },
-    { store:'978', address:'MIDLOTHIAN, TX #978, 2000 FM 663 STE 200, MIDLOTHIAN TX', lat:32.46071, lon:-96.99437 },
-    { store:'1074', address:'MANSFIELD #2 TX, #1074, 2881 MATLOCK RD STE 101, MANSFIELD TX', lat:32.60493, lon:-97.11461 },
-    { store:'3003', address:'DALLAS, TX CSC #3003, 3630 W MILLER RD STE 330, GARLAND TX', lat:32.89334, lon:-96.68528 },
-    { store:'3008', address:'ARLINGTON, TX CSC #3008, 2416 E RANDOL MILL RD, ARLINGTON TX', lat:32.74842, lon:-97.06535 },
-  ],
-  33: [
-    { store:'Store 38', address:'12310 MANCHESTER RD, SAINT LOUIS, MO 63131', lat:38.60344, lon:-90.44317 },
-    { store:'Store 50', address:'7850 POPLAR AVE STE 16, GERMANTOWN, TN 38138', lat:35.08898, lon:-89.80103 },
-    { store:'Store 187', address:'3829 LEMAY FERRY RD, SAINT LOUIS, MO 63125', lat:38.50727, lon:-90.32455 },
-    { store:'Store 204', address:'6216 STAGE RD, MEMPHIS, TN 38134', lat:35.20472, lon:-89.85582 },
-    { store:'Store 342', address:'4111 N CLOVERLEAF DR, SAINT PETERS, MO 63376', lat:38.79492, lon:-90.57316 },
-    { store:'Store 347', address:'15545 MANCHESTER RD, BALLWIN, MO 63011', lat:38.5928, lon:-90.56988 },
-    { store:'Store 441', address:'1941 E INDEPENDENCE ST, SPRINGFIELD, MO 65804', lat:37.1417, lon:-93.25929 },
-    { store:'Store 453', address:'4227 E MCCAIN BLVD, NORTH LITTLE ROCK, AR 72117', lat:34.78938, lon:-92.21968 },
-    { store:'Store 478', address:'875 W POPLAR AVE STE 11, COLLIERVILLE, TN 38017', lat:35.0453, lon:-89.69204 },
-    { store:'Store 636', address:'801 S BOWMAN RD STE 1, LITTLE ROCK, AR 72211', lat:34.74627, lon:-92.40714 },
-    { store:'Store 725', address:'8500 PHOENIX AVE, FORT SMITH, AR 72903', lat:35.34648, lon:-94.33759 },
-    { store:'Store 852', address:'5218 GOODMAN RD STE 107, OLIVE BRANCH, MS 38654', lat:34.96241, lon:-89.89665 },
-    { store:'Store 876', address:'8 STONEBRIDGE BLVD STE J, JACKSON, TN 38305', lat:35.6719, lon:-88.85368 },
-    { store:'Store 900', address:'3952 N GLOSTER ST STE D E, TUPELO, MS 38804', lat:34.31093, lon:-88.70689 },
-    { store:'Store 903', address:'863 MOUNT MORIAH RD, MEMPHIS, TN 38117', lat:35.10781, lon:-89.89543 },
-    { store:'Store 960', address:'9020 US HIGHWAY 64 STE 107, ARLINGTON, TN 38002', lat:35.20458, lon:-89.76222 },
-    { store:'Store 1052', address:'1207 WATER TOWER PL STE 15, ARNOLD, MO 63010', lat:38.43925, lon:-90.37309 },
-    { store:'Store 1076', address:'301 WINDING WOODS CTR STE 301, O FALLON, MO 63366', lat:38.78365, lon:-90.69932 },
-  ],
-  34: [
-    { store:'Store 32', address:'4516 NW 63RD ST, OKLAHOMA CITY, OK 73132', lat:35.53676, lon:-97.60259 },
-    { store:'Store 54', address:'3233 S HARVARD AVE, TULSA, OK 74135', lat:36.04493, lon:-95.93989 },
-    { store:'Store 225', address:'7175 S MINGO RD, TULSA, OK 74133', lat:36.0595, lon:-95.86845 },
-    { store:'Store 269', address:'216 S BRYANT AVE, EDMOND, OK 73034', lat:35.6518, lon:-97.46037 },
-    { store:'Store 311', address:'676 ED NOBLE PKWY, NORMAN, OK 73072', lat:35.20982, lon:-97.48293 },
-    { store:'Store 422', address:'4011 NW CACHE RD, LAWTON, OK 73505', lat:34.62364, lon:-98.44505 },
-    { store:'Store 432', address:'800 SW 89TH ST, OKLAHOMA CITY, OK 73139', lat:35.37706, lon:-97.5293 },
-    { store:'Store 670', address:'2520 W MEMORIAL RD, OKLAHOMA CITY, OK 73134', lat:35.6085, lon:-97.5602 },
-    { store:'Store 671', address:'9021 N 121ST EAST AVE STE 500, OWASSO, OK 74055', lat:36.28745, lon:-95.84444 },
-    { store:'Store 694', address:'1600 GARTH BROOKS BLVD STE 115, YUKON, OK 73099', lat:35.48305, lon:-97.76137 },
-    { store:'Store 727', address:'6309 S ELM PL, BROKEN ARROW, OK 74011', lat:35.98951, lon:-95.79734 },
-    { store:'Store 760', address:'7014 SE 15TH ST, OKLAHOMA CITY, OK 73110', lat:35.44959, lon:-97.40265 },
-    { store:'Store 766', address:'3985 S STATE HIGHWAY 97, SAND SPRINGS, OK 74063', lat:36.10589, lon:-96.11711 },
-    { store:'Store 817', address:'2401 12TH AVE NW STE 19, ARDMORE, OK 73401', lat:34.18755, lon:-97.16006 },
-    { store:'Store 825', address:'251 E WATERLOO RD STE 2, EDMOND, OK 73034', lat:35.72541, lon:-97.47563 },
-    { store:'Store 826', address:'12307 N ROCKWELL AVE, OKLAHOMA CITY, OK 73142', lat:35.59596, lon:-97.63857 },
-    { store:'Store 834', address:'12150 S VANCOUVER AVE STE A, GLENPOOL, OK 74033', lat:35.98678, lon:-96.01412 },
-    { store:'Store 878', address:'611 NW 32ND ST, NEWCASTLE, OK 73065', lat:35.29104, lon:-97.60716 },
-    { store:'Store 882', address:'3805 WASHINGTON PL STE C, BARTLESVILLE, OK 74006', lat:36.73108, lon:-95.93455 },
-    { store:'Store 909', address:'5503 W OWEN K GARRIOTT RD, ENID, OK 73703', lat:36.38987, lon:-97.94578 },
-    { store:'Store 1072', address:'137 N MUSTANG RD, MUSTANG, OK 73064', lat:35.39256, lon:-97.72464 },
-    { store:'Store 1502', address:'2500 S SERVICE RD, OKLAHOMA CITY, OK 73160', lat:35.31502, lon:-97.48907 },
-  ],
-  36: [
-    { store:'Store 43', address:'263 HILDERBRAND DR, ATLANTA, GA 30328', lat:33.92292, lon:-84.37769 },
-    { store:'Store 53', address:'7626 MEMORIAL PKWY SW, HUNTSVILLE, AL 35802', lat:34.66477, lon:-86.57219 },
-    { store:'Store 329', address:'1330 E WEST CONNECTOR STE AA2, AUSTELL, GA 30106', lat:33.857, lon:-84.597 },
-    { store:'Store 345', address:'2404 VIRGINIA BEACH BLVD STE 118, VIRGINIA BEACH, VA 23454', lat:36.84225, lon:-76.05309 },
-    { store:'Store 376', address:'10502 ALPHARETTA HWY STE B, ROSWELL, GA 30076', lat:34.03854, lon:-84.34452 },
-    { store:'Store 400', address:'1401 JOHNSON FERRY RD STE 112 120, MARIETTA, GA 30062', lat:33.98497, lon:-84.42903 },
-    { store:'Store 504', address:'9745 HIGHWAY 92 STE D D-E, WOODSTOCK, GA 30188', lat:34.08686, lon:-84.52868 },
-    { store:'Store 583', address:'3405 DALLAS HWY SW STE 406 BLDG 400, MARIETTA, GA 30064', lat:33.95217, lon:-84.6498 },
-    { store:'Store 587', address:'5805 STATE BRIDGE RD STE Q1, DULUTH, GA 30097', lat:34.01797, lon:-84.18971 },
-    { store:'Store 639', address:'12850 HIGHWAY 9 N STE 1900, ALPHARETTA, GA 30004', lat:34.09616, lon:-84.27701 },
-    { store:'Store 642', address:'3335 COBB PKWY NW STE 900, ACWORTH, GA 30101', lat:34.03556, lon:-84.68281 },
-    { store:'Store 672', address:'1680 MALL OF GEORGIA BLVD STE 1760, BUFORD, GA 30519', lat:34.06263, lon:-83.99396 },
-    { store:'Store 673', address:'975 DAWSONVILLE HWY STE 20-21, GAINESVILLE, GA 30501', lat:34.30046, lon:-83.85804 },
-    { store:'Store 771', address:'425 PEACHTREE PKWY STE 330 335, CUMMING, GA 30041', lat:34.15177, lon:-84.17223 },
-    { store:'Store 772', address:'7754 SPALDING DR, PEACHTREE CORNERS, GA 30092', lat:33.96779, lon:-84.25973 },
-    { store:'Store 851', address:'7830 HIGHWAY 72 W STE 150/160, MADISON, AL 35758', lat:34.7538, lon:-86.74223 },
-    { store:'Store 879', address:'2900 DELK RD SE EXTENSION 2200, MARIETTA, GA 30067', lat:33.92311, lon:-84.46674 },
-    { store:'Store 1085', address:'3455 PEACHTREE PKWY STE 208-209, SUWANEE, GA 30024', lat:34.07837, lon:-84.16208 },
-    { store:'Store 3007', address:'2924B AMWILER RD, ATLANTA, GA 30360', lat:33.9276, lon:-84.26077 },
-  ],
-  37: [
-    { store:'Store 102', address:'1588 MONTGOMERY HWY, BIRMINGHAM, AL 35216', lat:33.40329, lon:-86.80672 },
-    { store:'Store 212', address:'2725 EASTERN BLVD, MONTGOMERY, AL 36117', lat:32.34486, lon:-86.22286 },
-    { store:'Store 316', address:'191 JONESBORO RD STE E, MCDONOUGH, GA 30253', lat:33.45067, lon:-84.16323 },
-    { store:'Store 317', address:'5222 N HENRY BLVD, STOCKBRIDGE, GA 30281', lat:33.54662, lon:-84.249 },
-    { store:'Store 320', address:'400 STONEWALL AVE W, FAYETTEVILLE, GA 30214', lat:33.44758, lon:-84.46257 },
-    { store:'Store 365', address:'1708 SCENIC HWY N STE P, SNELLVILLE, GA 30078', lat:33.88056, lon:-84.01161 },
-    { store:'Store 418', address:'2522 DAWSON RD, ALBANY, GA 31707', lat:31.61151, lon:-84.21326 },
-    { store:'Store 428', address:'5370 STONE MOUNTAIN HWY STE 40, STONE MOUNTAIN, GA 30087', lat:33.82233, lon:-84.11434 },
-    { store:'Store 431', address:'6440 W HAMILTON PARK DR STE H, COLUMBUS, GA 31909', lat:32.53867, lon:-84.95718 },
-    { store:'Store 620', address:'428 CROSSTOWN DR, PEACHTREE CITY, GA 30269', lat:33.37698, lon:-84.56139 },
-    { store:'Store 651', address:'5880 TRUSSVILLE CROSSINGS BLVD, BIRMINGHAM, AL 35235', lat:33.64518, lon:-86.62716 },
-    { store:'Store 697', address:'2975 N DRUID HILLS RD NE, ATLANTA, GA 30329', lat:33.81527, lon:-84.31016 },
-    { store:'Store 723', address:'1111 HIGHWAY 34 E STE 8 9, NEWNAN, GA 30265', lat:33.39672, lon:-84.74225 },
-    { store:'Store 762', address:'2270 SALEM RD SE STE 101, CONYERS, GA 30013', lat:33.62926, lon:-83.97771 },
-    { store:'Store 808', address:'2985 CHAPEL HILL RD STE 102, DOUGLASVILLE, GA 30135', lat:33.72366, lon:-84.73392 },
-    { store:'Store 892', address:'4357 FORSYTH RD STE 90, MACON, GA 31210', lat:32.86772, lon:-83.69677 },
-  ],
-  38: [
-    { store:'Store 56', address:'7211 N KEYSTONE AVE, INDIANAPOLIS, IN 46240', lat:39.88683, lon:-86.1219 },
-    { store:'Store 165', address:'257 E COLISEUM BLVD, FORT WAYNE, IN 46805', lat:41.11823, lon:-85.13886 },
-    { store:'Store 171', address:'7565 US 31 S STE A04, INDIANAPOLIS, IN 46227', lat:39.65599, lon:-86.14113 },
-    { store:'Store 385', address:'9521 S CICERO AVE, OAK LAWN, IL 60453', lat:41.71907, lon:-87.74069 },
-    { store:'Store 389', address:'324 W ROOSEVELT RD, LOMBARD, IL 60148', lat:41.86025, lon:-88.02541 },
-    { store:'Store 410', address:'771 E DUNDEE RD, PALATINE, IL 60074', lat:42.13911, lon:-88.02518 },
-    { store:'Store 411', address:'15923 HARLEM AVE, TINLEY PARK, IL 60477', lat:41.60127, lon:-87.79394 },
-    { store:'Store 415', address:'1215 US HIGHWAY 41, SCHERERVILLE, IN 46375', lat:41.49942, lon:-87.47094 },
-    { store:'Store 484', address:'5666 GRAPE RD, MISHAWAKA, IN 46545', lat:41.71198, lon:-86.18758 },
-    { store:'Store 612', address:'485 S ROUTE 59, AURORA, IL 60504', lat:41.74961, lon:-88.20617 },
-    { store:'Store 619', address:'14641 THATCHER LN STE 7, CARMEL, IN 46032', lat:40.00092, lon:-86.12597 },
-    { store:'Store 640', address:'369 W ARMY TRAIL RD STE 12-14, BLOOMINGDALE, IL 60108', lat:41.93932, lon:-88.11259 },
-    { store:'Store 669', address:'8662 E 96TH ST, FISHERS, IN 46037', lat:39.92771, lon:-86.01712 },
-    { store:'Store 730', address:'835 BEACHWAY DR STE 115, INDIANAPOLIS, IN 46224', lat:39.77837, lon:-86.26813 },
-    { store:'Store 803', address:'502 RANDALL RD, SOUTH ELGIN, IL 60177', lat:41.97426, lon:-88.34074 },
-    { store:'Store 853', address:'6030 CENTRAL AVE, PORTAGE, IN 46368', lat:41.57613, lon:-87.18081 },
-    { store:'Store 962', address:'117 S RANDALL RD, ALGONQUIN, IL 60102', lat:42.1739, lon:-88.33525 },
-    { store:'Store 2107', address:'320 INDUSTRIAL DR, WEST CHICAGO, IL 60185', lat:41.88765, lon:-88.23403 },
-  ],
-  39: [
-    { store:'Store 45', address:'3185 SHERIDAN DR, BUFFALO, NY 14226', lat:42.98021, lon:-78.81449 },
-    { store:'Store 65', address:'1340 W RIDGE RD, ROCHESTER, NY 14615', lat:43.20476, lon:-77.66281 },
-    { store:'Store 92', address:'29945 ORCHARD LAKE RD, FARMINGTON, MI 48334', lat:42.51702, lon:-83.35961 },
-    { store:'Store 99', address:'3662 ROCHESTER RD, TROY, MI 48083', lat:42.57206, lon:-83.12787 },
-    { store:'Store 134', address:'6875 RIDGE RD, CLEVELAND, OH 44129', lat:41.37907, lon:-81.73463 },
-    { store:'Store 158', address:'749 PANORAMA TRL S, ROCHESTER, NY 14625', lat:43.13157, lon:-77.49368 },
-    { store:'Store 159', address:'2700 28TH ST SE, GRAND RAPIDS, MI 49512', lat:42.91253, lon:-85.59854 },
-    { store:'Store 248', address:'14568 PEARL RD, STRONGSVILLE, OH 44136', lat:41.30914, lon:-81.83529 },
-    { store:'Store 274', address:'2525 S REYNOLDS RD, TOLEDO, OH 43614', lat:41.59331, lon:-83.6646 },
-    { store:'Store 287', address:'25128 LORAIN RD, NORTH OLMSTED, OH 44070', lat:41.3916, lon:-81.9681 },
-    { store:'Store 307', address:'4962 MONROE ST STE B, TOLEDO, OH 43623', lat:41.69772, lon:-83.64054 },
-    { store:'Store 324', address:'5095 TRANSIT RD STE 3, BUFFALO, NY 14221', lat:42.98577, lon:-78.69688 },
-    { store:'Store 333', address:'34658 WARREN RD # 1, WESTLAND, MI 48185', lat:42.33905, lon:-83.38266 },
-    { store:'Store 384', address:'3125 28TH ST SW STE 1, GRANDVILLE, MI 49418', lat:42.91372, lon:-85.74123 },
-    { store:'Store 641', address:'1101 BETHEL RD, COLUMBUS, OH 43220', lat:40.06335, lon:-83.04789 },
-    { store:'Store 654', address:'84 BOARDMAN POLAND RD, YOUNGSTOWN, OH 44512', lat:41.02443, lon:-80.6582 },
-    { store:'Store 660', address:'9211 MENTOR AVE STE 5, MENTOR, OH 44060', lat:41.6773, lon:-81.30939 },
-    { store:'Store 858', address:'5069 N HAMILTON RD STE B6 B7, COLUMBUS, OH 43230', lat:40.05949, lon:-82.86391 },
-  ],
-  40: [
-    { store:'Store 91', address:'2825 WASHINGTON RD STE K, AUGUSTA, GA 30909', lat:33.5107, lon:-82.03295 },
-    { store:'Store 94', address:'4402 E INDEPENDENCE BLVD, CHARLOTTE, NC 28205', lat:35.19629, lon:-80.76803 },
-    { store:'Store 350', address:'6185 RIVERS AVE, CHARLESTON, SC 29406', lat:32.9065, lon:-80.0219 },
-    { store:'Store 366', address:'7370 TWO NOTCH RD UNIT A B, COLUMBIA, SC 29223', lat:34.06724, lon:-80.95437 },
-    { store:'Store 381', address:'8500 PINEVILLE MATTHEWS RD STE H, CHARLOTTE, NC 28226', lat:35.08794, lon:-80.86258 },
-    { store:'Store 420', address:'523 HAYWOOD RD, GREENVILLE, SC 29607', lat:34.84674, lon:-82.34155 },
-    { store:'Store 634', address:'260 HARBISON BLVD STE A, COLUMBIA, SC 29212', lat:34.07203, lon:-81.15991 },
-    { store:'Store 635', address:'7010 SMITH CORNERS BLVD STE D, CHARLOTTE, NC 28269', lat:35.34876, lon:-80.84334 },
-    { store:'Store 659', address:'946 ORLEANS RD UNIT F8, CHARLESTON, SC 29407', lat:32.79772, lon:-80.0285 },
-    { store:'Store 681', address:'9721 E INDEPENDENCE BLVD STE B, MATTHEWS, NC 28105', lat:35.1338, lon:-80.71238 },
-    { store:'Store 709', address:'1211 N MAIN ST STE C, SUMMERVILLE, SC 29483', lat:33.03487, lon:-80.15931 },
-    { store:'Store 735', address:'339B HARRISON BRIDGE RD, SIMPSONVILLE, SC 29680', lat:34.7053, lon:-82.25388 },
-    { store:'Store 786', address:'1125 JOHNNIE DODDS BLVD, MOUNT PLEASANT, SC 29464', lat:32.81225, lon:-79.85871 },
-    { store:'Store 835', address:'7750 WARREN H ABERNATHY HWY STE A, SPARTANBURG, SC 29301', lat:34.9357, lon:-82.00232 },
-    { store:'Store 841', address:'3090 E FRANKLIN BLVD STE 15, GASTONIA, NC 28056', lat:35.25883, lon:-81.12356 },
-    { store:'Store 847', address:'4324 WASHINGTON RD STE 101, EVANS, GA 30809', lat:33.53859, lon:-82.1304 },
-    { store:'Store 867', address:'601 RIVER HWY, MOORESVILLE, NC 28117', lat:35.59553, lon:-80.87287 },
-    { store:'Store 920', address:'8027 KINGSTON PIKE STE 3, KNOXVILLE, TN 37919', lat:35.92484, lon:-84.0475 },
-    { store:'Store 921', address:'741 LOUISVILLE RD, ALCOA, TN 37701', lat:35.7722, lon:-83.98701 },
-  ],
-  41: [
-    { store:'Store 51', address:'6414 E VIRGINIA BEACH BLVD, NORFOLK, VA 23502', lat:36.85495, lon:-76.18406 },
-    { store:'Store 344', address:'836 EDEN WAY N STE 145, CHESAPEAKE, VA 23320', lat:36.77594, lon:-76.23269 },
-    { store:'Store 445', address:'1037 HANES MALL BLVD, WINSTON SALEM, NC 27103', lat:36.06665, lon:-80.31732 },
-    { store:'Store 452', address:'12233 JEFFERSON AVE STE 6, NEWPORT NEWS, VA 23602', lat:37.11054, lon:-76.49943 },
-    { store:'Store 466', address:'6641 FALLS OF NEUSE RD C-7, RALEIGH, NC 27615', lat:35.87377, lon:-78.62264 },
-    { store:'Store 479', address:'7601 W BROAD ST STE F, HENRICO, VA 23294', lat:37.61856, lon:-77.52384 },
-    { store:'Store 663', address:'4212 W WENDOVER AVE STE B C, GREENSBORO, NC 27407', lat:36.05764, lon:-79.8887 },
-    { store:'Store 710', address:'223 CROSSROADS BLVD STE 350, CARY, NC 27518', lat:35.76069, lon:-78.73871 },
-    { store:'Store 722', address:'330 S COLLEGE RD STE 6, WILMINGTON, NC 28403', lat:34.23354, lon:-77.8751 },
-    { store:'Store 732', address:'729 BATTLEFIELD BLVD S STE A, CHESAPEAKE, VA 23322', lat:36.70031, lon:-76.2338 },
-    { store:'Store 761', address:'1030 S MAIN ST STE J, KERNERSVILLE, NC 27284', lat:36.10766, lon:-80.0987 },
-    { store:'Store 799', address:'4512 PRINCESS ANNE RD STE 201, VIRGINIA BEACH, VA 23462', lat:36.80531, lon:-76.13259 },
-    { store:'Store 854', address:'2217 UPTON DR STE 804, VIRGINIA BEACH, VA 23454', lat:36.75519, lon:-76.00765 },
-    { store:'Store 855', address:'3200 ACADEMY AVE, PORTSMOUTH, VA 23703', lat:36.86239, lon:-76.39802 },
-    { store:'Store 870', address:'181 GLENSFORD DR, FAYETTEVILLE, NC 28314', lat:35.06795, lon:-78.96035 },
-    { store:'Store 938', address:'7454 TIDEWATER DR, NORFOLK, VA 23505', lat:36.90938, lon:-76.25588 },
-    { store:'Store 952', address:'11382 MIDLOTHIAN TPKE, RICHMOND, VA 23235', lat:37.50595, lon:-77.60582 },
-    { store:'Store 1505', address:'3710 COLLEGE RD S UNIT 139/141, WILMINGTON, NC 28412', lat:34.17436, lon:-77.89139 },
-  ],
-  42: [
-    { store:'Store 40', address:'9800 SHELBYVILLE RD STE 102, LOUISVILLE, KY 40223', lat:38.24611, lon:-85.57387 },
-    { store:'Store 80', address:'9721 KENWOOD RD, CINCINNATI, OH 45242', lat:39.23562, lon:-84.37664 },
-    { store:'Store 186', address:'5038 GLENCROSSING WAY STE 176, CINCINNATI, OH 45238', lat:39.13038, lon:-84.61 },
-    { store:'Store 276', address:'9796 COLERAIN AVE, CINCINNATI, OH 45251', lat:39.24913, lon:-84.59687 },
-    { store:'Store 315', address:'8000 DIXIE HWY, LOUISVILLE, KY 40258', lat:38.1351, lon:-85.84481 },
-    { store:'Store 326', address:'25 PRESTIGE PLAZA DR, MIAMISBURG, OH 45342', lat:39.63819, lon:-84.22814 },
-    { store:'Store 353', address:'550 OHIO PIKE, CINCINNATI, OH 45255', lat:39.0706, lon:-84.30401 },
-    { store:'Store 378', address:'159 N BURKHARDT RD, EVANSVILLE, IN 47715', lat:37.97835, lon:-87.47219 },
-    { store:'Store 421', address:'7130 PRESTON HWY, LOUISVILLE, KY 40219', lat:38.14839, lon:-85.69233 },
-    { store:'Store 446', address:'130 W TIVERTON WAY STE 110, LEXINGTON, KY 40503', lat:37.98081, lon:-84.53053 },
-    { store:'Store 647', address:'1050 GLENBROOK WAY STE 100, HENDERSONVILLE, TN 37075', lat:36.33166, lon:-86.62492 },
-    { store:'Store 763', address:'3343 PRINCETON RD, HAMILTON, OH 45011', lat:39.39063, lon:-84.50397 },
-    { store:'Store 823', address:'7564 VOICE OF AMERICA CENTRE DR, WEST CHESTER, OH 45069', lat:39.35804, lon:-84.36248 },
-    { store:'Store 877', address:'2445 MEMORIAL BLVD STE F, MURFREESBORO, TN 37129', lat:35.88839, lon:-86.383 },
-    { store:'Store 915', address:'300 PLEASANT GROVE RD STE 425, MOUNT JULIET, TN 37122', lat:36.17818, lon:-86.51393 },
-    { store:'Store 922', address:'1625 CAMPBELL LN, BOWLING GREEN, KY 42104', lat:36.95123, lon:-86.43745 },
-    { store:'Store 939', address:'615 BAKERS BRIDGE AVE STE 170, FRANKLIN, TN 37067', lat:35.95852, lon:-86.80407 },
-    { store:'Store 959', address:'73 WHITE BRIDGE PIKE STE 124, NASHVILLE, TN 37205', lat:36.12987, lon:-86.85536 },
-    { store:'Store 971', address:'1370 VETERANS PKWY STE 500, CLARKSVILLE, IN 47129', lat:38.32926, lon:-85.75695 },
-  ],
-  43: [
-    { store:'Store 107', address:'709 QUEEN ST STE 6, SOUTHINGTON, CT 06489', lat:41.63613, lon:-72.87364 },
-    { store:'Store 151', address:'464 BOSTON POST RD STE 2, ORANGE, CT 06477', lat:41.25698, lon:-73.01283 },
-    { store:'Store 160', address:'3221 BERLIN TPKE, NEWINGTON, CT 06111', lat:41.65979, lon:-72.72349 },
-    { store:'Store 169', address:'120 MAIN ST, WEYMOUTH, MA 02188', lat:42.20263, lon:-70.95588 },
-    { store:'Store 192', address:'8 NEWBURY ST STE 8 BLDG D, DANVERS, MA 01923', lat:42.55842, lon:-70.97872 },
-    { store:'Store 213', address:'87 BOSTON TPKE # 4, SHREWSBURY, MA 01545', lat:42.27482, lon:-71.75032 },
-    { store:'Store 246', address:'91 HALE RD, MANCHESTER, CT 06042', lat:41.81266, lon:-72.52762 },
-    { store:'Store 273', address:'121 ELM ST, ENFIELD, CT 06082', lat:41.99807, lon:-72.58161 },
-    { store:'Store 282', address:'876 BOSTON RD, BILLERICA, MA 01821', lat:42.52726, lon:-71.22585 },
-    { store:'Store 285', address:'1089 BALD HILL RD, WARWICK, RI 02886', lat:41.70616, lon:-71.49264 },
-    { store:'Store 304', address:'526 S BROADWAY, SALEM, NH 03079', lat:42.74096, lon:-71.19777 },
-    { store:'Store 306', address:'1258 S BROAD ST, WALLINGFORD, CT 06492', lat:41.50675, lon:-72.80946 },
-    { store:'Store 343', address:'272 COLUMBIA RD STE 6, HANOVER, MA 02339', lat:42.11182, lon:-70.81548 },
-    { store:'Store 406', address:'100 CAHILL AVE, MANCHESTER, NH 03103', lat:42.96207, lon:-71.44445 },
-    { store:'Store 486', address:'1335 BOSTON PROVIDENCE TPKE, NORWOOD, MA 02062', lat:42.16751, lon:-71.19795 },
-    { store:'Store 724', address:'760 WORCESTER RD, FRAMINGHAM, MA 01702', lat:42.299, lon:-71.42844 },
-    { store:'Store 743', address:'454 BRIDGEPORT AVE, MILFORD, CT 06460', lat:41.20557, lon:-73.09274 },
-    { store:'Store 744', address:'2852 MAIN ST, GLASTONBURY, CT 06033', lat:41.71948, lon:-72.61393 },
-    { store:'Store 765', address:'1285 BELMONT ST STE 6 7, BROCKTON, MA 02301', lat:42.05845, lon:-71.06824 },
-    { store:'Store 833', address:'123 FARMINGTON AVE STE 25, BRISTOL, CT 06010', lat:41.68476, lon:-72.93918 },
-    { store:'Store 905', address:'185 WASHINGTON ST STE A, ATTLEBORO, MA 02703', lat:41.92649, lon:-71.35559 },
-    { store:'Store 950', address:'293 DANIEL WEBSTER HWY, NASHUA, NH 03060', lat:42.70433, lon:-71.44119 },
-    { store:'Store 1054', address:'38 PERSHING DR, DERBY, CT 06418', lat:41.33059, lon:-73.08473 },
-  ],
-  44: [
-    { store:'Store 103', address:'8131 RITCHIE HWY STE B, PASADENA, MD 21122', lat:39.12393, lon:-76.58748 },
-    { store:'Store 108', address:'5200 NICHOLSON LN, KENSINGTON, MD 20895', lat:39.04492, lon:-77.10583 },
-    { store:'Store 156', address:'412 MAPLE AVE E STE 1, VIENNA, VA 22180', lat:38.90753, lon:-77.25782 },
-    { store:'Store 167', address:'580 BALTIMORE PIKE, BEL AIR, MD 21014', lat:39.52659, lon:-76.35424 },
-    { store:'Store 170', address:'13910 SHOPPERS BEST WAY, WOODBRIDGE, VA 22192', lat:38.65046, lon:-77.29887 },
-    { store:'Store 207', address:'4723 KIRKWOOD HWY STE D, WILMINGTON, DE 19808', lat:39.72263, lon:-75.66077 },
-    { store:'Store 219', address:'4113 WHOLESALE CLUB DR STE 100, NOTTINGHAM, MD 21236', lat:39.37942, lon:-76.50231 },
-    { store:'Store 303', address:'3864 UNION DEPOSIT RD, HARRISBURG, PA 17109', lat:40.2784, lon:-76.82592 },
-    { store:'Store 359', address:'1211 MERRITT BLVD STE D-4, DUNDALK, MD 21222', lat:39.28145, lon:-76.50544 },
-    { store:'Store 382', address:'984 LOUCKS RD STE G&H, YORK, PA 17404', lat:39.97897, lon:-76.75585 },
-    { store:'Store 407', address:'1285 MANHEIM PIKE STE 1, LANCASTER, PA 17601', lat:40.0643, lon:-76.32501 },
-    { store:'Store 824', address:'10029 YORK RD STE A&B, COCKEYSVILLE, MD 21030', lat:39.46519, lon:-76.63678 },
-    { store:'Store 829', address:'9970 LIBERIA AVE, MANASSAS, VA 20110', lat:38.74064, lon:-77.45143 },
-    { store:'Store 861', address:'1450 RITCHIE HWY STE 110, ARNOLD, MD 21012', lat:39.03002, lon:-76.50491 },
-    { store:'Store 866', address:'5517 CARLISLE PIKE, MECHANICSBURG, PA 17050', lat:40.24041, lon:-76.98421 },
-    { store:'Store 891', address:'400 ENGLAR RD STE 1B, WESTMINSTER, MD 21157', lat:39.58575, lon:-76.9892 },
-    { store:'Store 928', address:'7607 RICHMOND HWY, ALEXANDRIA, VA 22306', lat:38.75796, lon:-77.08475 },
-    { store:'Store 942', address:'913 REISTERSTOWN RD, PIKESVILLE, MD 21208', lat:39.37629, lon:-76.72963 },
-    { store:'Store 1071', address:'1142 PULASKI HWY UNIT 6B, BEAR, DE 19701', lat:39.63055, lon:-75.66372 },
-    { store:'Store 1097', address:'200 GROVE LN, NEWARK, DE 19711', lat:39.68293, lon:-75.73406 },
-    { store:'Store 3018', address:'300 COMMODORE DR, SWEDESBORO, NJ 08085', lat:39.7672, lon:-75.33947 },
-  ],
-  46: [
-    { store:'Store 35', address:'3365 HEMPSTEAD TPKE, LEVITTOWN, NY 11756', lat:40.7259, lon:-73.51056 },
-    { store:'Store 63', address:'102 VETERANS MEMORIAL HWY, COMMACK, NY 11725', lat:40.84018, lon:-73.28359 },
-    { store:'Store 95', address:'5670 SUNRISE HWY, SAYVILLE, NY 11782', lat:40.76634, lon:-73.07471 },
-    { store:'Store 96', address:'11 CENTEREACH MALL, CENTEREACH, NY 11720', lat:40.8592, lon:-73.08237 },
-    { store:'Store 150', address:'63 GLEN COVE RD, GREENVALE, NY 11548', lat:40.81386, lon:-73.62702 },
-    { store:'Store 188', address:'935 SUNRISE HWY, LYNBROOK, NY 11563', lat:40.65746, lon:-73.68704 },
-    { store:'Store 275', address:'874 E JERICHO TPKE UNIT 2, HUNTINGTON STATION, NY 11746', lat:40.83459, lon:-73.38088 },
-    { store:'Store 279', address:'3431 MERRICK RD, WANTAGH, NY 11793', lat:40.6651, lon:-73.50173 },
-    { store:'Store 379', address:'70 SUNRISE HWY, LINDENHURST, NY 11757', lat:40.69586, lon:-73.38762 },
-    { store:'Store 414', address:'5020 NESCONSET HWY SPC 3, PORT JEFFERSON STATI, NY 11776', lat:40.92106, lon:-73.0515 },
-    { store:'Store 588', address:'349 WILLIAM FLOYD PKWY STE B, SHIRLEY, NY 11967', lat:40.77314, lon:-72.86737 },
-    { store:'Store 589', address:'300 E MAIN ST, EAST ISLIP, NY 11730', lat:40.73423, lon:-73.17628 },
-    { store:'Store 621', address:'56 E MAIN ST, SMITHTOWN, NY 11787', lat:40.85552, lon:-73.19196 },
-    { store:'Store 696', address:'621 JERICHO TPKE, SYOSSET, NY 11791', lat:40.81146, lon:-73.49421 },
-    { store:'Store 705', address:'646 MEDFORD AVE STE 9, PATCHOGUE, NY 11772', lat:40.79036, lon:-73.00857 },
-    { store:'Store 742', address:'357 ROUTE 25A STE C, ROCKY POINT, NY 11778', lat:40.94521, lon:-72.94236 },
-    { store:'Store 746', address:'2245 JERICHO TPKE, NEW HYDE PARK, NY 11040', lat:40.74032, lon:-73.66466 },
-    { store:'Store 970', address:'528 LARKFIELD RD STE A-B, EAST NORTHPORT, NY 11731', lat:40.86136, lon:-73.3201 },
-    { store:'Store 1069', address:'401 W. SUNRISE HWY, FREEPORT, NY 11520', lat:40.6534, lon:-73.58619 },
-    { store:'Store 1509', address:'285 S BROADWAY, HICKSVILLE, NY 11801', lat:40.76237, lon:-73.51709 },
-  ],
-  47: [
-    { store:'Store 122', address:'2326 MACARTHUR RD, WHITEHALL, PA 18052', lat:40.64121, lon:-75.49035 },
-    { store:'Store 124', address:'831 LANCASTER AVE, WAYNE, PA 19087', lat:40.04863, lon:-75.4115 },
-    { store:'Store 155', address:'762 BETHLEHEM PIKE, MONTGOMERYVILLE, PA 18936', lat:40.24589, lon:-75.2436 },
-    { store:'Store 174', address:'260 N POTTSTOWN PIKE STE 9, EXTON, PA 19341', lat:40.03438, lon:-75.63237 },
-    { store:'Store 209', address:'40 GREENFIELD AVE, ARDMORE, PA 19003', lat:40.00903, lon:-75.29662 },
-    { store:'Store 210', address:'606 YORK RD, WARMINSTER, PA 18974', lat:40.20821, lon:-75.09971 },
-    { store:'Store 211', address:'636 OLD YORK RD STE 2, JENKINTOWN, PA 19046', lat:40.10086, lon:-75.12587 },
-    { store:'Store 262', address:'4411 CONCORD PIKE, WILMINGTON, DE 19803', lat:39.81525, lon:-75.5493 },
-    { store:'Store 286', address:'679 KIDDER ST, WILKES BARRE, PA 18702', lat:41.25069, lon:-75.84769 },
-    { store:'Store 296', address:'104A W GERMANTOWN PIKE, NORRISTOWN, PA 19401', lat:40.14527, lon:-75.31895 },
-    { store:'Store 341', address:'3801 NAZARETH PIKE, BETHLEHEM, PA 18020', lat:40.67367, lon:-75.34551 },
-    { store:'Store 370', address:'204 SHOEMAKER RD STE 7, POTTSTOWN, PA 19464', lat:40.25545, lon:-75.66159 },
-    { store:'Store 395', address:'1025 COMMERCE BLVD, SCRANTON, PA 18519', lat:41.46359, lon:-75.64142 },
-    { store:'Store 655', address:'1183 BERKSHIRE BLVD, READING, PA 19610', lat:40.34064, lon:-75.97855 },
-    { store:'Store 758', address:'1546 PAOLI PIKE, WEST CHESTER, PA 19380', lat:39.99091, lon:-75.5493 },
-    { store:'Store 768', address:'133 S WEST END BLVD, QUAKERTOWN, PA 18951', lat:40.43879, lon:-75.35532 },
-    { store:'Store 831', address:'3710 N EASTON RD STE A, DOYLESTOWN, PA 18902', lat:40.33037, lon:-75.12935 },
-    { store:'Store 838', address:'789 W SPROUL RD STE 12, SPRINGFIELD, PA 19064', lat:39.93598, lon:-75.35149 },
-    { store:'Store 946', address:'222 E MAIN ST UNIT 2, COLLEGEVILLE, PA 19426', lat:40.18334, lon:-75.45202 },
-    { store:'Store 949', address:'1091 MILL CREEK RD STE 13, ALLENTOWN, PA 18106', lat:40.55303, lon:-75.58131 },
-    { store:'Store 1096', address:'703 ROUTE 113 STE 9, SOUDERTON, PA 18964', lat:40.31644, lon:-75.30933 },
-  ],
-  49: [
-    { store:'Store 75', address:'201 W STREET RD, FEASTERVILLE TREVOSE, PA 19053', lat:40.15493, lon:-75.00952 },
-    { store:'Store 113', address:'472 STATE ROUTE 35, RED BANK, NJ 07701', lat:40.37648, lon:-74.08963 },
-    { store:'Store 126', address:'268 STATE ROUTE 18, EAST BRUNSWICK, NJ 08816', lat:40.45976, lon:-74.40246 },
-    { store:'Store 135', address:'110 LINCOLN HWY STE 5, FAIRLESS HILLS, PA 19030', lat:40.18087, lon:-74.86833 },
-    { store:'Store 157', address:'1930 ROUTE 88 STE 30, BRICK, NJ 08724', lat:40.07251, lon:-74.1173 },
-    { store:'Store 184', address:'2070 MARLTON PIKE E STE 4, CHERRY HILL, NJ 08003', lat:39.89769, lon:-74.95115 },
-    { store:'Store 226', address:'4060 US HIGHWAY 9, HOWELL, NJ 07731', lat:40.15397, lon:-74.22905 },
-    { store:'Store 280', address:'1013 ROUTE 130 S, RIVERTON, NJ 08077', lat:39.99704, lon:-74.9926 },
-    { store:'Store 309', address:'3371 US HIGHWAY 1 UNIT 401, LAWRENCE TOWNSHIP, NJ 08648', lat:40.29628, lon:-74.68213 },
-    { store:'Store 336', address:'10 ROUTE 37 E UNIT 6, TOMS RIVER, NJ 08753', lat:39.96377, lon:-74.19788 },
-    { store:'Store 404', address:'2335 STREET RD STE 4, BENSALEM, PA 19020', lat:40.10374, lon:-74.95007 },
-    { store:'Store 416', address:'3681 US HIGHWAY 9 STE 5, FREEHOLD, NJ 07728', lat:40.24599, lon:-74.28252 },
-    { store:'Store 425', address:'1470 STATE ROUTE 36, HAZLET, NJ 07730', lat:40.4288, lon:-74.19031 },
-    { store:'Store 661', address:'950 HIGHWAY 33 STE 8, TRENTON, NJ 08690', lat:40.22939, lon:-74.67011 },
-    { store:'Store 759', address:'415 EGG HARBOR RD, SEWELL, NJ 08080', lat:39.74983, lon:-75.07544 },
-    { store:'Store 832', address:'5 JACKSON RD, MEDFORD, NJ 08055', lat:39.87288, lon:-74.81794 },
-    { store:'Store 895', address:'297 ROUTE 72 W, MANAHAWKIN, NJ 08050', lat:39.69948, lon:-74.26761 },
-    { store:'Store 914', address:'1901 STATE ROUTE 35, BELMAR, NJ 07719', lat:40.15986, lon:-74.0523 },
-    { store:'Store 1063', address:'658 W CUTHBERT BLVD, COLLINGSWOOD, NJ 08108', lat:39.90236, lon:-75.06331 },
-    { store:'Store 1083', address:'344 US HIGHWAY 9 STE 11, LANOKA HARBOR, NJ 08734', lat:39.84995, lon:-74.18396 },
-  ],
-  51: [
-    { store:'Store 109', address:'151 WESTPORT AVE, NORWALK, CT 06851', lat:41.12362, lon:-73.40076 },
-    { store:'Store 111', address:'1817 SOUTH RD STE 1, WAPPINGERS FALLS, NY 12590', lat:41.61346, lon:-73.91388 },
-    { store:'Store 127', address:'579 TROY SCHENECTADY RD STE 224, LATHAM, NY 12110', lat:42.75192, lon:-73.76653 },
-    { store:'Store 148', address:'288 TARRYTOWN RD, WHITE PLAINS, NY 10607', lat:41.04164, lon:-73.7931 },
-    { store:'Store 149', address:'447 N STATE RT 17, PARAMUS, NJ 07652', lat:40.95234, lon:-74.07288 },
-    { store:'Store 154', address:'119 US HIGHWAY 22, DUNELLEN, NJ 08812', lat:40.60435, lon:-74.47395 },
-    { store:'Store 172', address:'110 E ROUTE 59, NANUET, NY 10954', lat:41.09554, lon:-74.00699 },
-    { store:'Store 214', address:'525 TUNXIS HILL CUT OFF STE 11, FAIRFIELD, CT 06825', lat:41.17833, lon:-73.23989 },
-    { store:'Store 223', address:'350 RAMAPO VALLEY RD STE 425, OAKLAND, NJ 07436', lat:41.02467, lon:-74.24192 },
-    { store:'Store 239', address:'271 US HIGHWAY 22 STE B, SPRINGFIELD, NJ 07081', lat:40.68509, lon:-74.32493 },
-    { store:'Store 277', address:'1132 US HIGHWAY 46, CLIFTON, NJ 07013', lat:40.87027, lon:-74.18274 },
-    { store:'Store 298', address:'355 UNIVERSAL DR N, NORTH HAVEN, CT 06473', lat:41.35392, lon:-72.8705 },
-    { store:'Store 357', address:'178 HIGHWAY 35 STE 2, EATONTOWN, NJ 07724', lat:40.29193, lon:-74.05233 },
-    { store:'Store 364', address:'352 STATE RT 23, POMPTON PLAINS, NJ 07444', lat:40.96178, lon:-74.28321 },
-    { store:'Store 394', address:'3067 US HIGHWAY 46 UNIT E, PARSIPPANY, NJ 07054', lat:40.87099, lon:-74.42212 },
-    { store:'Store 721', address:'150 N MAIN ST, MANVILLE, NJ 08835', lat:40.54624, lon:-74.58658 },
-    { store:'Store 733', address:'72 NEWTOWN RD STE 1, DANBURY, CT 06810', lat:41.40649, lon:-73.41798 },
-    { store:'Store 860', address:'469 ROUTE 211 E, MIDDLETOWN, NY 10940', lat:41.45685, lon:-74.38033 },
-    { store:'Store 947', address:'305 WEST AVE STE 305-1, STAMFORD, CT 06902', lat:41.04313, lon:-73.5587 },
-    { store:'Store 948', address:'275 STATE ROUTE 10 E STE 190, SUCCASUNNA, NJ 07876', lat:40.87175, lon:-74.6452 },
-    { store:'Store 985', address:'1300 STATE RT 17 STE 6, RAMSEY, NJ 07446', lat:41.07146, lon:-74.13928 },
-    { store:'Store 1082', address:'500 S RIVER ST STE 6B, HACKENSACK, NJ 07601', lat:40.86364, lon:-74.03507 },
-  ],
-  52: [
-    { store:'355', address:'TALLAHASSEE, FL #355, 2515 N MONROE ST, TALLAHASSEE FL', lat:30.47578, lon:-84.29614 },
-    { store:'456', address:'SAVANNAH, GA #456, 7805 ABERCORN ST STE 4, SAVANNAH GA', lat:32.006, lon:-81.11663 },
-    { store:'459', address:'LAKE MARY, FL 459, 815 RINEHART RD STE 102, LAKE MARY FL', lat:28.78132, lon:-81.34706 },
-    { store:'462', address:'SWEETWATER, FL 462, 3855 WEKIVA SPRINGS RD, LONGWOOD FL', lat:28.70928, lon:-81.45538 },
-    { store:'494', address:'WINTER PARK, FL 494, 2245 ALOMA AVE, WINTER PARK FL', lat:28.60102, lon:-81.3226 },
-    { store:'529', address:'ORANGE PARK, FL #529, 6001 ARGYLE FOREST BLVD STE 35, JACKSONVILLE FL', lat:30.19184, lon:-81.74136 },
-    { store:'538', address:'MANDARIN SOUTH, FL #538, 10131 SAN JOSE BLVD STE 11, JACKSONVILLE FL', lat:30.19417, lon:-81.62294 },
-    { store:'572', address:'PORT ORANGE, FL #572, 1665 DUNLAWTON AVE STE 110, PORT ORANGE FL', lat:29.11409, lon:-81.02502 },
-    { store:'582', address:'OCALA, FL #582, 2701 SW COLLEGE RD STE 604B, OCALA FL', lat:29.16553, lon:-82.16958 },
-    { store:'608', address:'ORANGE CITY, FL #608, 985 HARLEY STRICKLAND BLVD STE 200, ORANGE CITY FL', lat:28.91667, lon:-81.28576 },
-    { store:'657', address:'OVIEDO, FL #657, 8085 RED BUG LAKE RD STE 101, OVIEDO FL', lat:28.6562, lon:-81.2395 },
-    { store:'683', address:'PANAMA CITY, FL #683, 615 E 23RD ST STE A, PANAMA CITY FL', lat:30.18963, lon:-85.65076 },
-    { store:'684', address:'GULF BREEZE, FL #684, 3749 GULF BREEZE PKWY STE F, GULF BREEZE FL', lat:30.38959, lon:-87.06737 },
-    { store:'687', address:'PENSACOLA, FL #687, 1765 E NINE MILE RD STE 4, PENSACOLA FL', lat:30.53206, lon:-87.22328 },
-    { store:'703', address:'ALTAMONTE SPRINGS, FL #703, 445 W STATE ROAD 436 STE 1053, ALTAMONTE SPRINGS FL', lat:28.66205, lon:-81.39981 },
-    { store:'902', address:'JACKSON BEACH, FL #902, 924 3RD ST N, JACKSONVILLE BEACH FL', lat:30.2971, lon:-81.39372 },
-    { store:'904', address:'NORTH TALLAHASSEE, FL #904, 6753 THOMASVILLE RD STE 105, TALLAHASSEE FL', lat:30.56425, lon:-84.21418 },
-    { store:'906', address:'SAINT AUGUSTINE, FL #906, 200 C B L DR STE 108, SAINT AUGUSTINE FL', lat:29.86575, lon:-81.3294 },
-    { store:'1350', address:'Gainesville #1350, 7100 W UNIVERSITY AVE, GAINESVILLE FL', lat:29.65334, lon:-82.41778 },
-  ],
-  53: [
-    { store:'120', address:'FT MYERS, FL #120, 11598 S CLEVELAND AVE, FORT MYERS FL', lat:26.57158, lon:-81.87211 },
-    { store:'164', address:'CAPE CORAL, FL #164, 2314 DEL PRADO BLVD S STE 6, CAPE CORAL FL', lat:26.60884, lon:-81.94131 },
-    { store:'228', address:'PALM HARBOR 228, 32546 US HIGHWAY 19 N, PALM HARBOR FL', lat:28.06775, lon:-82.73902 },
-    { store:'417', address:'TOWN AND COUNTRY 417, 8418 SHELDON RD, TAMPA FL', lat:28.02701, lon:-82.58322 },
-    { store:'527', address:'SEMINOLE, FL 527, 10350 SEMINOLE BLVD STE 206 207, LARGO FL', lat:27.86688, lon:-82.78715 },
-    { store:'531', address:'SARASOTA, FL #531, 4284 BEE RIDGE RD, SARASOTA FL', lat:27.2987, lon:-82.48358 },
-    { store:'533', address:'VENICE, FL #533, 4347 S TAMIAMI TRL, VENICE FL', lat:27.04986, lon:-82.38779 },
-    { store:'537', address:'CLEARWATER, FL 537, 1530 N MCMULLEN BOOTH RD STE D6, CLEARWATER FL', lat:27.9803, lon:-82.70914 },
-    { store:'565', address:'PORT CHARLOTTE, FL #565, 1900 TAMIAMI TRL UNIT 119, PORT CHARLOTTE FL', lat:27.00558, lon:-82.13114 },
-    { store:'596', address:'ST PETERSBURG, FL #596, 280 37TH AVE N, SAINT PETERSBURG FL', lat:27.80573, lon:-82.63629 },
-    { store:'668', address:'N CAPE CORAL, FL #668, 900 SW PINE ISLAND RD STE 105, CAPE CORAL FL', lat:26.64178, lon:-81.99791 },
-    { store:'690', address:'OLDSMAR, FL #690, 13823 W HILLSBOROUGH AVE, TAMPA FL', lat:28.03275, lon:-82.64525 },
-    { store:'711', address:'NORTH PORT, FL #711, 17473 TAMIAMI TRL, NORTH PORT FL', lat:27.03632, lon:-82.21388 },
-    { store:'712', address:'CENTRAL BRADENTON, FL #712, 4350 CORTEZ RD W, BRADENTON FL', lat:27.46263, lon:-82.60526 },
-    { store:'885', address:'GULF TO BAY, FL #885, 1641 GULF TO BAY BLVD, CLEARWATER FL', lat:27.96054, lon:-82.76801 },
-    { store:'930', address:'SOUTH CAPE CORAL, FL #930, 1715 CAPE CORAL PKWY W STE 18, CAPE CORAL FL', lat:26.56285, lon:-82.00933 },
-    { store:'945', address:'ENGLEWOOD, FL #945, 13435 S MCCALL RD STE A 3-4, PORT CHARLOTTE FL', lat:26.932, lon:-82.22309 },
-    { store:'1058', address:'LEHIGH ACRES, FL #1058, 1129 HOMESTEAD RD N STE 12, LEHIGH ACRES FL', lat:26.60435, lon:-81.64725 },
-    { store:'1353', address:'The Shoppes at Price Crs #1353, 1201 W PRICE BLVD, NORTH PORT FL', lat:27.06832, lon:-82.16072 },
-  ],
-  54: [
-    { store:'79', address:'TAMPA, FL #79, 14364 N DALE MABRY HWY, TAMPA FL', lat:28.07792, lon:-82.50702 },
-    { store:'200', address:'BRANDON, FL #200, 1335 W BRANDON BLVD STE E, BRANDON FL', lat:27.93729, lon:-82.3039 },
-    { store:'233', address:'BRANDON-2, FL #233, 847 E BLOOMINGDALE AVE, BRANDON FL', lat:27.89359, lon:-82.27248 },
-    { store:'253', address:'LAKELAND, FL #253, 4770 S FLORIDA AVE, LAKELAND FL', lat:27.97789, lon:-81.95817 },
-    { store:'465', address:'BELLE ISLE, FL 465, 5160 CONWAY RD STE 9, ORLANDO FL', lat:28.48083, lon:-81.33093 },
-    { store:'475', address:'OCOEE, FL 475, 1485 E SILVER STAR RD, OCOEE FL', lat:28.57357, lon:-81.52478 },
-    { store:'482', address:'NEW TAMPA, FL 482, 1255 BRUCE B DOWNS BLVD, WESLEY CHAPEL FL', lat:28.17454, lon:-82.35383 },
-    { store:'488', address:'CLERMONT, FL 488, 2670 E HIGHWAY 50 UNIT H, CLERMONT FL', lat:28.54679, lon:-81.70315 },
-    { store:'497', address:'HUNTERS CREEK, FL 497, 4181 W TOWN CENTER BLVD STE 8-9, ORLANDO FL', lat:28.36428, lon:-81.42458 },
-    { store:'523', address:'WATERFORD LAKES, FL 523, 1987 S ALAFAYA TRL STE 225, ORLANDO FL', lat:28.52456, lon:-81.19298 },
-    { store:'581', address:'WINTER HAVEN, FL #581, 7050 CYPRESS GARDENS BLVD, WINTER HAVEN FL', lat:27.97827, lon:-81.6593 },
-    { store:'607', address:'DAVENPORT, FL 607, 111 AMBERSWEET WAY STE 2, DAVENPORT FL', lat:28.31341, lon:-81.66939 },
-    { store:'638', address:'RIVERVIEW, FL 638, 10651 BIG BEND RD STE 53, RIVERVIEW FL', lat:27.79192, lon:-82.33158 },
-    { store:'658', address:'SPRING HILL, FL #658, 4169 MARINER BLVD, SPRING HILL FL', lat:28.49168, lon:-82.54165 },
-    { store:'700', address:'SOUTH TAMPA, FL #700, 2202 S DALE MABRY HWY, TAMPA FL', lat:27.92521, lon:-82.50584 },
-    { store:'755', address:'TARPON SPRINGS, FL #755, 1151 S PINELLAS AVE, TARPON SPRINGS FL', lat:28.13652, lon:-82.75717 },
-    { store:'801', address:'EAST ORLANDO, FL #801, 419 S CHICKASAW TRL, ORLANDO FL', lat:28.53852, lon:-81.27573 },
-    { store:'3002', address:'ORLANDO, FL CSC #3002, 1260 LA QUINTA DR STE 400, ORLANDO FL', lat:28.44038, lon:-81.39886 },
-    { store:'3021', address:'TAMPA, FL CSC #3021, 5402 PIONEER PARK BLVD STE D, TAMPA FL', lat:28.0136, lon:-82.5338 },
-  ],
-  56: [
-    { store:'37', address:'NEW ORLEANS, LA #37, 4640 VETERANS MEMORIAL BLVD, METAIRIE LA', lat:30.005, lon:-90.18772 },
-    { store:'44', address:'BATON ROUGE, LA #44, 4520 S SHERWOOD FOREST BLVD STE 101, BATON ROUGE LA', lat:30.41269, lon:-91.05169 },
-    { store:'48', address:'MOBILE, AL #48, 3945 AIRPORT BLVD, MOBILE AL', lat:30.67576, lon:-88.14688 },
-    { store:'101', address:'GRETNA, LA #101, 320 LAPALCO BLVD STE A, GRETNA LA', lat:29.88102, lon:-90.02738 },
-    { store:'105', address:'SHREVEPORT, LA #105, 1720 E 70TH ST, SHREVEPORT LA', lat:32.44349, lon:-93.71468 },
-    { store:'449', address:'LAFAYETTE, LA #449, 3809 AMBASSADOR CAFFERY PKWY STE 11, LAFAYETTE LA', lat:30.1696, lon:-92.06415 },
-    { store:'454', address:'JACKSON, MS #454, 1039 E COUNTY LINE RD STE 104, JACKSON MS', lat:32.39939, lon:-90.1377 },
-    { store:'457', address:'MOBILE, AL #2 #457, 312 SCHILLINGER RD S STE G, MOBILE AL', lat:30.68507, lon:-88.22554 },
-    { store:'551', address:'SLIDELL, LA #551, 61123 AIRPORT RD STE 3, SLIDELL LA', lat:30.318, lon:-89.82637 },
-    { store:'618', address:'W BATON ROUGE, LA 618, 3151 COLLEGE DR STE E, BATON ROUGE LA', lat:30.41741, lon:-91.14223 },
-    { store:'773', address:'COVINGTON, LA #773, 202 RIVER HIGHLANDS BLVD STE 2, COVINGTON LA', lat:30.45844, lon:-90.0833 },
-    { store:'774', address:'PRAIRIEVILLE, LA #774, 17532 AIRLINE HWY STE E, PRAIRIEVILLE LA', lat:30.3304, lon:-90.9824 },
-    { store:'865', address:'ALEXANDRIA, LA #865, 2710 S MACARTHUR DR, ALEXANDRIA LA', lat:31.26851, lon:-92.45949 },
-    { store:'872', address:'HOUMA, LA #872, 1779 MARTIN LUTHER KING JR BLVD STE, HOUMA LA', lat:29.61749, lon:-90.75794 },
-    { store:'884', address:'LAKE CHARLES, LA #884, 2647 DEREK DR, LAKE CHARLES LA', lat:30.1938, lon:-93.17921 },
-    { store:'907', address:'DAPHNE, AL #907, 1802 US HIGHWAY 98 STE G, DAPHNE AL', lat:30.60465, lon:-87.89803 },
-    { store:'919', address:'HATTIESBURG, MS #919, 24 CROSS CREEK PKWY STE 88, HATTIESBURG MS', lat:31.3237, lon:-89.38105 },
-  ],
-  58: [
-    { store:'489', address:'TAMARAC, FL 489, 8299 NW 88TH AVE STE 5, FORT LAUDERDALE FL', lat:26.22688, lon:-80.26983 },
-    { store:'491', address:'POMPANO BEACH, FL 491, 1263 S FEDERAL HWY, POMPANO BEACH FL', lat:26.21465, lon:-80.10623 },
-    { store:'492', address:'WELLINGTON, FL 492, 13860 WELLINGTON TRCE STE 34-35, WELLINGTON FL', lat:26.66194, lon:-80.26752 },
-    { store:'493', address:'CORAL SPRINGS, FL 493, 8260 WILES RD STE 40, POMPANO BEACH FL', lat:26.28662, lon:-80.23581 },
-    { store:'499', address:'BOYNTON BEACH, FL #499, 113 N CONGRESS AVE, BOYNTON BEACH FL', lat:26.52517, lon:-80.09174 },
-    { store:'502', address:'JUPITER, FL 502, 6340 W INDIANTOWN RD STE 100, JUPITER FL', lat:26.93441, lon:-80.13114 },
-    { store:'509', address:'FORT LAUDERDALE, FL 509, 681 E OAKLAND PARK BLVD, FORT LAUDERDALE FL', lat:26.1668, lon:-80.13765 },
-    { store:'528', address:'PALM SPRINGS, FL 528, 1666 S CONGRESS AVE, LAKE WORTH FL', lat:26.63671, lon:-80.08825 },
-    { store:'534', address:'WEST BOCA RATON, FL 534, 21735 STATE ROAD 7, BOCA RATON FL', lat:26.35253, lon:-80.20348 },
-    { store:'535', address:'VERO BEACH, FL #535, 1355 US HIGHWAY 1 STE 1, VERO BEACH FL', lat:27.62585, lon:-80.38934 },
-    { store:'536', address:'PALM BAY, FL #536, 160 MALABAR RD SW STE 102, PALM BAY FL', lat:27.99897, lon:-80.67427 },
-    { store:'546', address:'SOUTH KENDALL, FL #546, 12779 SW 88TH ST, MIAMI FL', lat:25.68602, lon:-80.40116 },
-    { store:'547', address:'STUART, FL 547, 2415 NW FEDERAL HWY, STUART FL', lat:27.23523, lon:-80.26825 },
-    { store:'557', address:'ST LUCIE WEST, FL #557, 938 SW SAINT LUCIE WEST BLVD, PORT SAINT LUCIE FL', lat:27.31714, lon:-80.38349 },
-    { store:'567', address:'PALM CITY, FL 567, 2843 SW CAFE CT, PALM CITY FL', lat:27.17126, lon:-80.29297 },
-    { store:'628', address:'WEST PLANTATION, FL 628, 879 N NOB HILL RD STE 20, FORT LAUDERDALE FL', lat:26.1341, lon:-80.28754 },
-    { store:'726', address:'PORT ST LUCIE, FL #726, 3267 SW PORT ST LUCIE BLVD, PORT SAINT LUCIE FL', lat:27.24907, lon:-80.37678 },
-    { store:'754', address:'MELBOURNE, FL #754, 1408 W NEW HAVEN AVE STE A, MELBOURNE FL', lat:28.07901, lon:-80.64549 },
-    { store:'890', address:'VIERA, FL #890, 3700 MURRELL RD, ROCKLEDGE FL', lat:28.29641, lon:-80.72207 },
-  ],
-  60: [
-    { store:'PECOS/ LAS VEGAS, NV #31', address:'3410 E DESERT INN RD, LAS VEGAS, NV 89121', lat:36.12975, lon:-115.09904 },
-    { store:'GREEN VALLEY, NV #110', address:'3740 E SUNSET RD STE 105, LAS VEGAS, NV 89120', lat:36.07146, lon:-115.09392 },
-    { store:'HENDERSON 312', address:'55 S VALLE VERDE DR STE 215, HENDERSON, NV 89012', lat:36.02541, lon:-115.06238 },
-    { store:'HAVASU 330', address:'1850 MCCULLOCH BLVD N STE C6, LAKE HAVASU CITY, AZ 86403', lat:34.47704, lon:-114.33839 },
-    { store:'SUNRISE MANOR 337', address:'354 N NELLIS BLVD, LAS VEGAS, NV 89110', lat:36.16503, lon:-115.06198 },
-    { store:'HENDERSON #2, NV #436', address:'256 E LAKE MEAD PKWY STE D, HENDERSON, NV 89015', lat:36.04206, lon:-114.97843 },
-    { store:'SALT LAKE CITY, UT #474', address:'6322 S STATE ST, MURRAY, UT 84107', lat:40.63362, lon:-111.88946 },
-    { store:'SOUTH LAS VEGAS, NV 512', address:'9850 S MARYLAND PKWY STE 10, LAS VEGAS, NV 89183', lat:36.01079, lon:-115.13672 },
-    { store:'SOUTHERN HIGHLANDS, NV #554', address:'10540 SOUTHERN HIGHLANDS PKWY STE 1, LAS VEGAS, NV 89141', lat:35.99763, lon:-115.20746 },
-    { store:'BULLHEAD CITY, AZ 625', address:'4723 S HIGHWAY 95 STE 105, FORT MOHAVE, AZ 86426', lat:35.0196, lon:-114.59806 },
-    { store:'ANTHEM, NV #810', address:'2860 BICENTENNIAL PKWY, HENDERSON, NV 89044', lat:35.94135, lon:-115.11573 },
-    { store:'SAINT GEORGE, UT #941', address:'1091 N BLUFF ST STE 403, SAINT GEORGE, UT 84770', lat:37.12737, lon:-113.60173 },
-    { store:'MESQUITE, NV #988', address:'330 N SANDHILL BLVD STE H-I, MESQUITE, NV 89027', lat:36.80844, lon:-114.0643 },
-    { store:'DRAPER, UT #1057', address:'256 E 12300 S STE B, DRAPER, UT 84020', lat:40.52668, lon:-111.88393 },
-    { store:'BOULDER, NV #1101', address:'6740 BOULDER HWY STE A, LAS VEGAS, NV 89122', lat:36.07757, lon:-115.02719 },
-    { store:'EASTERN, NV #1103', address:'8130 S EASTERN AVE, LAS VEGAS, NV 89123', lat:36.04186, lon:-115.11821 },
-    { store:'Las Vegas Tropicana #1504', address:'3265 E TROPICANA AVE STE 1-A, LAS VEGAS, NV 89121', lat:36.0999, lon:-115.1041 },
-    { store:'Enterprise #1510', address:'7955 BLUE DIAMOND RD STE 101/102, LAS VEGAS, NV 89178', lat:36.01877, lon:-115.26343 },
-    { store:'LAS VEGAS, NV CSC #3001', address:'6740 BOULDER HWY STE B, LAS VEGAS, NV 89122', lat:36.07845, lon:-115.02607 },
-  ],
-};
+// ── Visual helpers ────────────────────────────────────────────────────────
+const badgeClass = t => t>=75?'hot':t>=65?'warm':t>=55?'cool':'cold';
+const condLabel  = t => t>=75?'Hot':t>=65?'Warm':t>=55?'Cool':'Cold';
 
+function sunBar(hrs, maxW=48){
+  const w=Math.max(Math.round(Math.min(hrs/14,1)*maxW),2);
+  return `<div class="sun-wrap"><div class="sun-bar" style="width:${w}px"></div><span style="font-size:11.5px;color:#666;white-space:nowrap">${hrs.toFixed(1)} hrs</span></div>`;
+}
+function cloudBar(pct){
+  return `<div class="cloud-wrap"><div class="cloud-bar-bg"><div class="cloud-bar-fill" style="width:${Math.round(pct)}%"></div></div><span style="font-size:11.5px;color:#666">${Math.round(pct)}%</span></div>`;
+}
+function deltaHtml(val,unit){
+  if(val===null||isNaN(val)) return '<span class="delta-neu">—</span>';
+  const thr=unit==='rain'?0.05:unit==='cloud'?2:0.4;
+  const cls=Math.abs(val)<thr?'delta-neu':val>0?'delta-pos':'delta-neg';
+  const arr=Math.abs(val)<thr?'≈':val>0?'▲':'▼';
+  const sign=val>0?'+':'';
+  const disp=unit==='rain'?`${sign}${val.toFixed(2)} in`:unit==='sun'?`${sign}${val.toFixed(1)} hrs`:unit==='cloud'?`${sign}${Math.round(val)}%`:`${sign}${val.toFixed(1)}°F`;
+  return `<span class="${cls}">${arr} ${disp}</span>`;
+}
+function fmtDayLabel(s){ return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
 
-function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function fmtDate(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function getDateRange(){
-  const today = new Date();
-  return { start26:fmtDate(today), end26:fmtDate(addDays(today,6)), start25:fmtDate(addDays(today,-365)), end25:fmtDate(addDays(today,-359)) };
+function dataCells(d, histColor='#6b3faa'){
+  const ok26=d&&d.temp26!=null, ok25=d&&d.temp25!=null, ok=ok26&&ok25;
+  const t26  = !d?'—':ok26?`<span class="badge ${badgeClass(d.temp26)}">${d.temp26.toFixed(1)}°F</span>`:'<span class="err-cell">—</span>';
+  const rn26 = !d?'—':ok26?`${d.rain26.toFixed(2)} in`:'—';
+  const s26  = !d?'—':ok26&&d.sun26!=null?sunBar(d.sun26):'—';
+  const cl26 = !d?'—':ok26&&d.cloud26!=null?cloudBar(d.cloud26):'—';
+  const t25  = !d?'—':ok25?`<span style="font-size:11.5px;color:${histColor}">${d.temp25.toFixed(1)}°F</span>`:'—';
+  const rn25 = !d?'—':ok25?`<span style="font-size:11.5px;color:${histColor}">${d.rain25.toFixed(2)} in</span>`:'—';
+  const s25  = !d?'—':ok25&&d.sun25!=null?`<span style="font-size:11.5px;color:${histColor}">${d.sun25.toFixed(1)} hrs</span>`:'—';
+  const cl25 = !d?'—':ok25&&d.cloud25!=null?`<span style="font-size:11.5px;color:${histColor}">${Math.round(d.cloud25)}%</span>`:'—';
+  const dT = ok?deltaHtml(d.temp26-d.temp25,'temp'):'—';
+  const dR = ok?deltaHtml(d.rain26-d.rain25,'rain'):'—';
+  const dS = (ok&&d.sun26!=null&&d.sun25!=null)?deltaHtml(d.sun26-d.sun25,'sun'):'—';
+  const dC = (ok&&d.cloud26!=null&&d.cloud25!=null)?deltaHtml(d.cloud26-d.cloud25,'cloud'):'—';
+  return `<td>${t26}</td><td>${rn26}</td><td>${s26}</td><td>${cl26}</td>
+          <td>${t25}</td><td>${rn25}</td><td>${s25}</td><td>${cl25}</td>
+          <td>${dT}</td><td>${dR}</td><td>${dS}</td><td>${dC}</td>`;
 }
 
-async function fetchWeather(lat, lon, start, end, isArchive) {
-  const base = isArchive
-    ? 'https://customer-archive-api.open-meteo.com/v1/archive'
-    : 'https://customer-api.open-meteo.com/v1/forecast';
-  const url = `${base}?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}`
-    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,daylight_duration,cloud_cover_mean`
-    + `&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=America%2FNew_York`
-    + `&apikey=${API_KEY}`;
-  for (let attempt=0; attempt<4; attempt++) {
-    const resp = await fetch(url);
-    if (resp.status===429) { await sleep((attempt+1)*3000); continue; }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    if (data.error) throw new Error(data.reason||'API error');
-    const tMax=data.daily?.temperature_2m_max??[], tMin=data.daily?.temperature_2m_min??[];
-    const precip=data.daily?.precipitation_sum??[], daylen=data.daily?.daylight_duration??[];
-    const clouds=data.daily?.cloud_cover_mean??[], dates=data.daily?.time??[];
-    if(!tMax.length) throw new Error('Empty response');
-    const days=tMax.map((mx,i)=>({ date:dates[i]??'', tHigh:mx, tLow:tMin[i]??mx, tAvg:(mx+(tMin[i]??mx))/2, rain:precip[i]??0, sun:daylen[i]!=null?daylen[i]/3600:null, cloud:clouds[i]??null }));
-    const sunD=days.filter(d=>d.sun!=null), cloudD=days.filter(d=>d.cloud!=null);
-    return { avgTemp:days.reduce((s,d)=>s+d.tAvg,0)/days.length, totalRain:days.reduce((s,d)=>s+d.rain,0), avgSun:sunD.length?sunD.reduce((s,d)=>s+d.sun,0)/sunD.length:null, avgCloud:cloudD.length?cloudD.reduce((s,d)=>s+d.cloud,0)/cloudD.length:null, days };
+// ── Build daily sub-table ─────────────────────────────────────────────────
+function buildDailyTable(d, wrapClass, thClass){
+  const r26=d?.days26||[], r25=d?.days25||[], len=Math.max(r26.length,r25.length);
+  if(!len) return `<p style="padding:8px 12px;font-size:12px;color:#aaa">No daily data.</p>`;
+  let html=`<div class="${wrapClass}"><table class="${thClass} daily-tbl"><thead>
+    <tr><th rowspan="2" style="width:88px">Date</th>
+      <th colspan="5">2026</th><th colspan="5" class="dg-hist">2025</th><th colspan="4" class="dg-diff">Δ</th></tr>
+    <tr><th>High</th><th>Low</th><th>Rain</th><th>Sun</th><th>Cloud</th>
+        <th class="dg-hist">High</th><th class="dg-hist">Low</th><th class="dg-hist">Rain</th><th class="dg-hist">Sun</th><th class="dg-hist">Cloud</th>
+        <th class="dg-diff">Temp</th><th class="dg-diff">Rain</th><th class="dg-diff">Sun</th><th class="dg-diff">Cloud</th></tr>
+    </thead><tbody>`;
+  for(let i=0;i<len;i++){
+    const d6=r26[i],d5=r25[i];
+    html+=`<tr>
+      <td style="font-size:11px;font-weight:500">${d6?fmtDayLabel(d6.date):''}</td>
+      <td>${d6?`<span class="badge ${badgeClass(d6.tHigh)}" style="font-size:11px">${d6.tHigh.toFixed(0)}°F</span>`:'—'}</td>
+      <td style="color:#666;font-size:11px">${d6?d6.tLow.toFixed(0)+'°F':'—'}</td>
+      <td style="font-size:11px">${d6?d6.rain.toFixed(2)+' in':'—'}</td>
+      <td style="font-size:11px;color:#666">${d6&&d6.sun!=null?d6.sun.toFixed(1)+' hrs':'—'}</td>
+      <td style="font-size:11px;color:#666">${d6&&d6.cloud!=null?Math.round(d6.cloud)+'%':'—'}</td>
+      <td style="color:#6b3faa;font-size:11px">${d5?d5.tHigh.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#9b7fcc;font-size:11px">${d5?d5.tLow.toFixed(0)+'°F':'—'}</td>
+      <td style="color:#6b3faa;font-size:11px">${d5?d5.rain.toFixed(2)+' in':'—'}</td>
+      <td style="color:#6b3faa;font-size:11px">${d5&&d5.sun!=null?d5.sun.toFixed(1)+' hrs':'—'}</td>
+      <td style="color:#6b3faa;font-size:11px">${d5&&d5.cloud!=null?Math.round(d5.cloud)+'%':'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.tAvg-d5.tAvg,'temp'):'—'}</td>
+      <td>${(d6&&d5)?deltaHtml(d6.rain-d5.rain,'rain'):'—'}</td>
+      <td>${(d6&&d5&&d6.sun!=null&&d5.sun!=null)?deltaHtml(d6.sun-d5.sun,'sun'):'—'}</td>
+      <td>${(d6&&d5&&d6.cloud!=null&&d5.cloud!=null)?deltaHtml(d6.cloud-d5.cloud,'cloud'):'—'}</td>
+    </tr>`;
   }
-  throw new Error('Max retries exceeded');
+  return html+'</tbody></table></div>';
 }
 
-async function main() {
-  const { start26, end26, start25, end25 } = getDateRange();
-  console.log(`Fetching: ${start26} to ${end26} vs ${start25} to ${end25}`);
-  const output = { lastUpdated:new Date().toISOString(), dateRange:{start26,end26,start25,end25}, territories:{} };
+// ── Build store panel ─────────────────────────────────────────────────────
+function buildStorePanel(territory, district){
+  const tData = weatherData[territory];
+  const stores = tData?.stores?.[district] ?? [];
+  const loaded = stores.filter(s=>s.temp26!=null).length;
+  let html=`<div class="store-panel">
+    <div class="store-header">
+      <span>D${district} — ${stores.length} stores</span>
+      <small>${loaded} of ${stores.length} loaded · click a store row for daily breakdown</small>
+    </div>
+    <table class="store-tbl"><thead>
+      <tr><th rowspan="2" style="width:20px"></th><th rowspan="2">Store</th><th rowspan="2">Address</th>
+        <th colspan="4">This week (2026)</th><th colspan="4" class="sg-hist">Same week 2025</th><th colspan="4" class="sg-diff">Δ</th></tr>
+      <tr><th>Avg Temp</th><th>Rainfall</th><th>Avg Sun</th><th>Avg Cloud</th>
+          <th class="sg-hist">Avg Temp</th><th class="sg-hist">Rainfall</th><th class="sg-hist">Avg Sun</th><th class="sg-hist">Avg Cloud</th>
+          <th class="sg-diff">Temp Δ</th><th class="sg-diff">Rain Δ</th><th class="sg-diff">Sun Δ</th><th class="sg-diff">Cloud Δ</th></tr>
+    </thead><tbody>`;
 
-  const queue = [];
-  for (const [t, districts] of Object.entries(TERRITORY_STRUCTURE)) {
-    for (const d of districts) {
-      const c = DISTRICT_CENTERS[d];
-      queue.push({ type:'district', territory:parseInt(t), district:d, lat:c.lat, lon:c.lon });
-      for (const s of (STORE_DISTRICTS[d]||[])) {
-        queue.push({ type:'store', territory:parseInt(t), district:d, ...s });
+  stores.forEach(s=>{
+    const sid = `${district}-${s.store.replace(/\s/g,'-')}`;
+    const isExp = expandedStores.has(sid);
+    html+=`<tr class="district-row visible${isExp?' expanded':''}" style="cursor:pointer" onclick="toggleStore('${sid}')">
+      <td><span class="d-arrow">▶</span></td>
+      <td style="font-weight:500;font-size:12px">${s.store}</td>
+      <td style="font-size:11px;color:#888">${s.address}</td>
+      ${dataCells(s)}
+    </tr>`;
+    html+=`<tr class="store-daily-group${isExp?' visible':''}" id="sdg-${sid}">
+      <td colspan="15"><div class="store-daily-inner">${buildDailyTable(s,'','')}</div></td>
+    </tr>`;
+  });
+  return html+'</tbody></table></div>';
+}
+
+// ── Render main table ─────────────────────────────────────────────────────
+function renderTable(){
+  let html='';
+  for(const [tKey, districts] of Object.entries(TERRITORY_STRUCTURE)){
+    const t = parseInt(tKey);
+    const isExpT = expandedTerritories.has(t);
+    const tData = weatherData[t];
+
+    // Compute territory averages
+    let tTemp=null, tCount=0;
+    if(tData){
+      for(const d of districts){
+        const dd = tData.districts?.[d];
+        if(dd?.temp26!=null){ tTemp=(tTemp??0)+dd.temp26; tCount++; }
+      }
+      if(tCount>0) tTemp=tTemp/tCount;
+    }
+    const tSummary = tTemp!=null ? `Avg ${tTemp.toFixed(1)}°F · ${districts.length} districts` : `${districts.length} districts`;
+
+    html+=`<tr class="territory-row${isExpT?' expanded':''}" onclick="toggleTerritory(${t})">
+      <td colspan="13"><span class="t-arrow">▶</span> <strong>Territory ${t}</strong> &nbsp;<span style="font-size:11px;opacity:0.7">${tSummary}</span></td>
+    </tr>`;
+
+    for(const d of districts){
+      const dd = tData?.districts?.[d];
+      const isExpD = expandedDistricts.has(`${t}-${d}`);
+      const storeCount = tData?.stores?.[d]?.length ?? 0;
+      const badge = storeCount>0 ? `<span style="font-size:10px;background:#fef3c0;color:#854F0B;padding:1px 5px;border-radius:3px;margin-left:6px">${storeCount} stores</span>` : '';
+
+      html+=`<tr class="district-row${isExpT?' visible':''}${isExpD?' expanded':''}" onclick="toggleDistrict(${t},${d})">
+        <td><span class="d-arrow">▶</span></td>
+        <td class="d-indent" style="font-weight:500">D${d}${badge}</td>
+        ${dataCells(dd)}
+      </tr>`;
+
+      // Store panel expand row
+      html+=`<tr class="store-expand${(isExpT&&isExpD)?' visible':''}" id="sp-${t}-${d}">
+        <td colspan="13">${buildStorePanel(t,d)}</td>
+      </tr>`;
+    }
+  }
+  document.getElementById('tbody').innerHTML = html;
+  updateCards();
+}
+
+function toggleTerritory(t){
+  expandedTerritories.has(t)?expandedTerritories.delete(t):expandedTerritories.add(t);
+  renderTable();
+}
+function toggleDistrict(t,d){
+  const key=`${t}-${d}`;
+  expandedDistricts.has(key)?expandedDistricts.delete(key):expandedDistricts.add(key);
+  renderTable();
+}
+function toggleStore(sid){
+  expandedStores.has(sid)?expandedStores.delete(sid):expandedStores.add(sid);
+  renderTable();
+}
+function expandAll(){
+  for(const t of [1,2,3]) expandedTerritories.add(t);
+  for(const [t,ds] of Object.entries(TERRITORY_STRUCTURE))
+    for(const d of ds) expandedDistricts.add(`${t}-${d}`);
+  renderTable();
+}
+function collapseAll(){
+  expandedTerritories.clear(); expandedDistricts.clear(); expandedStores.clear();
+  renderTable();
+}
+
+// ── Summary cards ─────────────────────────────────────────────────────────
+function updateCards(){
+  const allDistricts = [];
+  for(const [t,ds] of Object.entries(TERRITORY_STRUCTURE)){
+    for(const d of ds){
+      const dd = weatherData[parseInt(t)]?.districts?.[d];
+      if(dd) allDistricts.push(dd);
+    }
+  }
+  const d26 = allDistricts.filter(r=>r.temp26!=null);
+  const d25 = allDistricts.filter(r=>r.temp25!=null);
+  const both= allDistricts.filter(r=>r.temp26!=null&&r.temp25!=null);
+
+  if(d26.length){
+    const avg26T = d26.reduce((s,r)=>s+r.temp26,0)/d26.length;
+    const sd = d26.filter(r=>r.sun26!=null);
+    const avg26S = sd.length?sd.reduce((s,r)=>s+r.sun26,0)/sd.length:null;
+    const cd = d26.filter(r=>r.cloud26!=null);
+    const avg26C = cd.length?cd.reduce((s,r)=>s+r.cloud26,0)/cd.length:null;
+    const hot = d26.reduce((a,b)=>a.temp26>b.temp26?a:b);
+    const wet = d26.reduce((a,b)=>a.rain26>b.rain26?a:b);
+    document.getElementById('s-temp-now').textContent = avg26T.toFixed(1)+'°F';
+    if(avg26S) document.getElementById('s-sun-now').textContent = avg26S.toFixed(1)+' hrs';
+    if(avg26C) document.getElementById('s-cloud-now').textContent = Math.round(avg26C)+'%';
+    document.getElementById('s-hot').textContent = `D${hot.district}`;
+    document.getElementById('s-hot-sub').textContent = hot.temp26.toFixed(1)+'°F avg';
+    document.getElementById('s-rain').textContent = `D${wet.district}`;
+    document.getElementById('s-rain-sub').textContent = wet.rain26.toFixed(2)+' in';
+  }
+  if(d25.length){
+    const avg25T = d25.reduce((s,r)=>s+r.temp25,0)/d25.length;
+    const sd25 = d25.filter(r=>r.sun25!=null);
+    const avg25S = sd25.length?sd25.reduce((s,r)=>s+r.sun25,0)/sd25.length:null;
+    const cd25 = d25.filter(r=>r.cloud25!=null);
+    const avg25C = cd25.length?cd25.reduce((s,r)=>s+r.cloud25,0)/cd25.length:null;
+    document.getElementById('s-temp-hist').textContent = '2025: '+avg25T.toFixed(1)+'°F';
+    if(avg25S) document.getElementById('s-sun-hist').textContent = '2025: '+avg25S.toFixed(1)+' hrs';
+    if(avg25C) document.getElementById('s-cloud-hist').textContent = '2025: '+Math.round(avg25C)+'%';
+  }
+  if(both.length){
+    const avg = both.reduce((s,r)=>s+(r.temp26-r.temp25),0)/both.length;
+    const sign = avg>0?'+':'';
+    document.getElementById('s-delta').textContent = sign+avg.toFixed(1)+'°F';
+    document.getElementById('s-delta').style.color = avg>0.4?'#c0392b':avg<-0.4?'#185fa5':'#1c1c1a';
+    document.getElementById('s-delta-sub').textContent = `avg across ${both.length} districts`;
+  }
+}
+
+// ── Load from weather.json ────────────────────────────────────────────────
+async function autoLoad(){
+  try {
+    const resp = await fetch('weather.json?t='+Date.now());
+    if(!resp.ok) throw new Error('Not found');
+    const json = await resp.json();
+    if(!json.lastUpdated) throw new Error('No data yet');
+
+    const {start26,end26,start25,end25} = json.dateRange;
+    document.getElementById('date-range').textContent =
+      `Forecast ${start26} → ${end26}   vs.   same period 2025 (${start25} → ${end25})  ·  Auto-updated daily`;
+
+    // Build weatherData from json.territories
+    weatherData = {};
+    for(const [tKey, tVal] of Object.entries(json.territories)){
+      const t = parseInt(tKey);
+      weatherData[t] = { districts:{}, stores:{} };
+      for(const [dKey, dVal] of Object.entries(tVal.districts||{})){
+        if(dVal) weatherData[t].districts[parseInt(dKey)] = dVal;
+      }
+      for(const [dKey, stores] of Object.entries(tVal.stores||{})){
+        weatherData[t].stores[parseInt(dKey)] = stores||[];
+      }
+    }
+
+    const updated = new Date(json.lastUpdated).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+    document.getElementById('status').textContent = `Last updated: ${updated}  ·  Updates automatically every morning`;
+    document.getElementById('export-btn').disabled = false;
+    renderTable();
+
+  } catch(e) {
+    document.getElementById('date-range').textContent = '7-day forecast vs. same period in 2025 · Temperature · Rainfall · Sunlight · Cloud Cover';
+    document.getElementById('status').textContent = 'No cached data found — click "Refresh data" to load manually.';
+    renderTable();
+  }
+}
+
+async function manualRefresh(){
+  document.getElementById('status').textContent = 'Reloading data…';
+  await autoLoad();
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportXLSX(){
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: District summary
+  const dh=['Territory','District',
+    'Avg Temp °F (2026)','Rainfall in (2026)','Avg Sun hrs (2026)','Avg Cloud % (2026)',
+    'Avg Temp °F (2025)','Rainfall in (2025)','Avg Sun hrs (2025)','Avg Cloud % (2025)',
+    'Temp Δ','Rain Δ','Sun Δ','Cloud Δ','Condition'];
+  const dr=[dh];
+  for(const [tKey,districts] of Object.entries(TERRITORY_STRUCTURE)){
+    const t=parseInt(tKey);
+    for(const d of districts){
+      const r=weatherData[t]?.districts?.[d];
+      if(!r) continue;
+      dr.push([`T${t}`,`D${d}`,
+        r.temp26!=null?+r.temp26.toFixed(2):'', r.rain26!=null?+r.rain26.toFixed(2):'', r.sun26!=null?+r.sun26.toFixed(2):'', r.cloud26!=null?+r.cloud26.toFixed(1):'',
+        r.temp25!=null?+r.temp25.toFixed(2):'', r.rain25!=null?+r.rain25.toFixed(2):'', r.sun25!=null?+r.sun25.toFixed(2):'', r.cloud25!=null?+r.cloud25.toFixed(1):'',
+        (r.temp26!=null&&r.temp25!=null)?+(r.temp26-r.temp25).toFixed(2):'',
+        (r.rain26!=null&&r.rain25!=null)?+(r.rain26-r.rain25).toFixed(2):'',
+        (r.sun26!=null&&r.sun25!=null)?+(r.sun26-r.sun25).toFixed(2):'',
+        (r.cloud26!=null&&r.cloud25!=null)?+(r.cloud26-r.cloud25).toFixed(1):'',
+        r.temp26!=null?condLabel(r.temp26):'']);
+    }
+  }
+  const ws1=XLSX.utils.aoa_to_sheet(dr);
+  ws1['!cols']=[6,8,18,14,14,12,18,14,14,12,10,10,10,10,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws1,'District Summary');
+
+  // Sheet 2: Store summary
+  const sh=['Territory','District','Store','Address',
+    'Avg Temp °F (2026)','Rainfall in (2026)','Avg Sun hrs (2026)','Avg Cloud % (2026)',
+    'Avg Temp °F (2025)','Rainfall in (2025)','Avg Sun hrs (2025)','Avg Cloud % (2025)',
+    'Temp Δ','Rain Δ','Sun Δ','Cloud Δ','Condition'];
+  const sr=[sh];
+  for(const [tKey,districts] of Object.entries(TERRITORY_STRUCTURE)){
+    const t=parseInt(tKey);
+    for(const d of districts){
+      const stores=weatherData[t]?.stores?.[d]??[];
+      for(const s of stores){
+        sr.push([`T${t}`,`D${d}`,s.store,s.address,
+          s.temp26!=null?+s.temp26.toFixed(2):'', s.rain26!=null?+s.rain26.toFixed(2):'', s.sun26!=null?+s.sun26.toFixed(2):'', s.cloud26!=null?+s.cloud26.toFixed(1):'',
+          s.temp25!=null?+s.temp25.toFixed(2):'', s.rain25!=null?+s.rain25.toFixed(2):'', s.sun25!=null?+s.sun25.toFixed(2):'', s.cloud25!=null?+s.cloud25.toFixed(1):'',
+          (s.temp26!=null&&s.temp25!=null)?+(s.temp26-s.temp25).toFixed(2):'',
+          (s.rain26!=null&&s.rain25!=null)?+(s.rain26-s.rain25).toFixed(2):'',
+          (s.sun26!=null&&s.sun25!=null)?+(s.sun26-s.sun25).toFixed(2):'',
+          (s.cloud26!=null&&s.cloud25!=null)?+(s.cloud26-s.cloud25).toFixed(1):'',
+          s.temp26!=null?condLabel(s.temp26):'']);
       }
     }
   }
+  const ws2=XLSX.utils.aoa_to_sheet(sr);
+  ws2['!cols']=[6,8,10,32,18,14,14,12,18,14,14,12,10,10,10,10,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws2,'Store Summary');
 
-  console.log(`Total locations to fetch: ${queue.length}`);
-  const districtData={}, storeData={};
-
-  for (let i=0; i<queue.length; i++) {
-    const item=queue[i];
-    console.log(`[${i+1}/${queue.length}] T${item.territory} D${item.district}${item.type==='store'?' '+item.store:''}`);
-    let w26=null, w25=null;
-    try { w26=await fetchWeather(item.lat,item.lon,start26,end26,false); } catch(e){ console.error(`  2026: ${e.message}`); }
-    await sleep(DELAY_MS);
-    try { w25=await fetchWeather(item.lat,item.lon,start25,end25,true); } catch(e){ console.error(`  2025: ${e.message}`); }
-    await sleep(DELAY_MS);
-    const rec={ temp26:w26?.avgTemp??null,rain26:w26?.totalRain??null,sun26:w26?.avgSun??null,cloud26:w26?.avgCloud??null,days26:w26?.days??null, temp25:w25?.avgTemp??null,rain25:w25?.totalRain??null,sun25:w25?.avgSun??null,cloud25:w25?.avgCloud??null,days25:w25?.days??null };
-    if(item.type==='district') { districtData[item.district]={district:item.district,territory:item.territory,...rec}; }
-    else { if(!storeData[item.district]) storeData[item.district]=[]; storeData[item.district].push({store:item.store,address:item.address,territory:item.territory,district:item.district,...rec}); }
-  }
-
-  for (const [t, districts] of Object.entries(TERRITORY_STRUCTURE)) {
-    output.territories[t]={ districts:{}, stores:{} };
-    for (const d of districts) {
-      output.territories[t].districts[d]=districtData[d]??null;
-      output.territories[t].stores[d]=storeData[d]??[];
-    }
-  }
-
-  fs.writeFileSync('weather.json', JSON.stringify(output, null, 2));
-  console.log('Done! Saved weather.json');
+  const date=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`Weather_Pull_${date}.xlsx`);
 }
 
-main().catch(err=>{ console.error('Fatal:',err); process.exit(1); });
+// Init
+renderTable();
+autoLoad();
+</script>
+</body>
+</html>
