@@ -1053,7 +1053,7 @@ async function fetchWeather(lat, lon, start, end, isArchive) {
     ? 'https://customer-archive-api.open-meteo.com/v1/archive'
     : 'https://customer-api.open-meteo.com/v1/forecast';
   const url = `${base}?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}`
-    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,daylight_duration,cloud_cover_mean`
+    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunshine_duration,daylight_duration,cloud_cover_mean`
     + `&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=America%2FNew_York`
     + `&apikey=${API_KEY}`;
   for (let attempt=0; attempt<4; attempt++) {
@@ -1063,12 +1063,13 @@ async function fetchWeather(lat, lon, start, end, isArchive) {
     const data = await resp.json();
     if (data.error) throw new Error(data.reason||'API error');
     const tMax=data.daily?.temperature_2m_max??[], tMin=data.daily?.temperature_2m_min??[];
-    const precip=data.daily?.precipitation_sum??[], daylen=data.daily?.daylight_duration??[];
+    const precip=data.daily?.precipitation_sum??[], snowfall=data.daily?.snowfall_sum??[];
+    const sunshine=data.daily?.sunshine_duration??[], daylen=data.daily?.daylight_duration??[];
     const clouds=data.daily?.cloud_cover_mean??[], dates=data.daily?.time??[];
     if(!tMax.length) throw new Error('Empty response');
-    const days=tMax.map((mx,i)=>({ date:dates[i]??'', tHigh:mx, tLow:tMin[i]??mx, tAvg:(mx+(tMin[i]??mx))/2, rain:precip[i]??0, sun:daylen[i]!=null?daylen[i]/3600:null, cloud:clouds[i]??null }));
-    const sunD=days.filter(d=>d.sun!=null), cloudD=days.filter(d=>d.cloud!=null);
-    return { avgTemp:days.reduce((s,d)=>s+d.tAvg,0)/days.length, totalRain:days.reduce((s,d)=>s+d.rain,0), avgSun:sunD.length?sunD.reduce((s,d)=>s+d.sun,0)/sunD.length:null, avgCloud:cloudD.length?cloudD.reduce((s,d)=>s+d.cloud,0)/cloudD.length:null, days };
+    const days=tMax.map((mx,i)=>({ date:dates[i]??'', tHigh:mx, tLow:tMin[i]??mx, tAvg:(mx+(tMin[i]??mx))/2, rain:precip[i]??0, snow:snowfall[i]??0, sun:sunshine[i]!=null?sunshine[i]/3600:null, day:daylen[i]!=null?daylen[i]/3600:null, cloud:clouds[i]??null }));
+    const sunD=days.filter(d=>d.sun!=null), dayD=days.filter(d=>d.day!=null), cloudD=days.filter(d=>d.cloud!=null);
+    return { avgTemp:days.reduce((s,d)=>s+d.tAvg,0)/days.length, totalRain:days.reduce((s,d)=>s+d.rain,0), totalSnow:days.reduce((s,d)=>s+(d.snow??0),0), avgSun:sunD.length?sunD.reduce((s,d)=>s+d.sun,0)/sunD.length:null, avgDay:dayD.length?dayD.reduce((s,d)=>s+d.day,0)/dayD.length:null, avgCloud:cloudD.length?cloudD.reduce((s,d)=>s+d.cloud,0)/cloudD.length:null, days };
   }
   throw new Error('Max retries exceeded');
 }
@@ -1100,7 +1101,7 @@ async function main() {
     await sleep(DELAY_MS);
     try { w25=await fetchWeather(item.lat,item.lon,start25,end25,true); } catch(e){ console.error(`  2025: ${e.message}`); }
     await sleep(DELAY_MS);
-    const rec={ temp26:w26?.avgTemp??null,rain26:w26?.totalRain??null,sun26:w26?.avgSun??null,cloud26:w26?.avgCloud??null,days26:w26?.days??null, temp25:w25?.avgTemp??null,rain25:w25?.totalRain??null,sun25:w25?.avgSun??null,cloud25:w25?.avgCloud??null,days25:w25?.days??null };
+    const rec={ temp26:w26?.avgTemp??null,rain26:w26?.totalRain??null,snow26:w26?.totalSnow??null,sun26:w26?.avgSun??null,day26:w26?.avgDay??null,cloud26:w26?.avgCloud??null,days26:w26?.days??null, temp25:w25?.avgTemp??null,rain25:w25?.totalRain??null,snow25:w25?.totalSnow??null,sun25:w25?.avgSun??null,day25:w25?.avgDay??null,cloud25:w25?.avgCloud??null,days25:w25?.days??null };
     if(item.type==='district') { districtData[item.district]={district:item.district,territory:item.territory,...rec}; }
     else { if(!storeData[item.district]) storeData[item.district]=[]; storeData[item.district].push({store:item.store,address:item.address,territory:item.territory,district:item.district,...rec}); }
   }
