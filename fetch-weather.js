@@ -1,4 +1,3 @@
-
 // fetch-weather.js — auto-generated, runs daily via GitHub Actions
 const fs = require('fs');
 const API_KEY = 'VzzMRqauyjq0RBu0';
@@ -1045,7 +1044,7 @@ function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; 
 function fmtDate(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function getDateRange(){
   const today = new Date();
-  return { start26:fmtDate(today), end26:fmtDate(addDays(today,6)), start25:fmtDate(addDays(today,-365)), end25:fmtDate(addDays(today,-359)) };
+  return { start26:fmtDate(today), end26:fmtDate(addDays(today,15)), start25:fmtDate(addDays(today,-365)), end25:fmtDate(addDays(today,-350)) };
 }
 
 async function fetchWeather(lat, lon, start, end, isArchive) {
